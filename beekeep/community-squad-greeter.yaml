@@ -1,0 +1,28 @@
+schema_version: 1
+slug: syncreus/community-squad-greeter
+name: Community Squad Greeter
+summary: Welcomes each new Buzz community member exactly once, waking only on
+  channel-join events so chat traffic cannot spam it.
+description: Welcome-desk persona from the community-squad pack. It wakes only
+  on channel-join events (BUZZ_ACP_KINDS=40099), reads the community handbook in
+  the channel canvas for the room's name and pointers, and posts one warm, short
+  welcome per new member. It never welcomes the same person twice, never answers
+  questions or joins discussions, and sends rules questions to the pack's rules
+  desk.
+category: operations
+tags:
+  - community
+  - onboarding
+author:
+  name: Syncreus
+  url: https://github.com/syncreus
+version: 0.1.0
+license: Apache-2.0
+source:
+  repository: https://github.com/syncreus/hivepack
+  commit: 685793c0c795f9cbd69fbe3ae1acccb4f9e0f534
+  path: packs/community-squad/snapshots/greeter.agent.json
+snapshot:
+  sha256: 667e4c077a5727554da9e039f49e1fb9b63fc6b7f3c26513881f63c865ba889f
+  size_bytes: 1984
+status: approved

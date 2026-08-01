@@ -1,0 +1,36 @@
+{
+  "$schema": "https://open-plugin-spec.org/schema/v1/plugin.json",
+  "id": "com.hivepack.community-squad",
+  "name": "HivePack Community Squad",
+  "version": "0.1.0",
+  "description": "Community onboarding team for Buzz: a join-triggered greeter that welcomes each member exactly once, and a rules desk that answers policy questions by quoting the channel canvas verbatim.",
+  "author": "HivePack",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/syncreus/hivepack",
+  "keywords": [
+    "buzz",
+    "agents",
+    "community",
+    "onboarding",
+    "moderation",
+    "hivepack"
+  ],
+  "engines": {
+    "buzz": ">=0.5.0"
+  },
+  "personas": [
+    "agents/greeter.persona.md",
+    "agents/rules.persona.md"
+  ],
+  "pack_instructions": "instructions.md",
+  "defaults": {
+    "triggers": {
+      "mentions": true,
+      "keywords": [],
+      "all_messages": false
+    },
+    "subscribe": [],
+    "thread_replies": true,
+    "broadcast_replies": false
+  }
+}

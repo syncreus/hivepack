@@ -6,7 +6,7 @@ Buzz gives you the office. HivePack gives you the team: opinionated multi-agent 
 
 ## What's in the box
 
-1. **Persona packs** (`packs/`). Ready-made squads that validate with the official `buzz pack validate`. The included `ship-squad` is a four-agent shipping team: lead, implementer, reviewer, and a receipt-backed memory agent.
+1. **Persona packs** (`packs/`). Ready-made squads that validate with the official `buzz pack validate`. The included `ship-squad` is a four-agent shipping team: lead, implementer, reviewer, and a receipt-backed memory agent. `community-squad` handles onboarding: a greeter that fires on join events only and welcomes each member exactly once, plus a rules desk that quotes your channel canvas verbatim, with a starter handbook template for the canvas itself.
 2. **`hivepack convert`**. Reads a Claude Code agent file (`.claude/agents/*.md`), rewrites it as a Buzz persona with team etiquette bolted on, and bundles the skills it depends on so the agent runs on its real playbook instead of guessing.
 3. **`buzzctl`**. A CLI for working with Buzz the way agents do: check your setup, list channels, and push a whole pack into Buzz as owner-reviewed agent drafts.
 
@@ -33,6 +33,8 @@ hivepack doctor
 hivepack validate ship-squad
 hivepack add ship-squad
 ```
+
+Running a community instead of a codebase? `hivepack add community-squad` ships the greeter + rules pair; see [packs/community-squad/README.md](packs/community-squad/README.md) for the canvas handbook setup.
 
 `add` validates the pack, exports one `.agent.json` snapshot per persona, and prints a checklist. Import each snapshot in Buzz Desktop (Agents, then Import), leave the harness at your default, invite the agents into a channel, and talk to them.
 

@@ -1,0 +1,28 @@
+schema_version: 1
+slug: syncreus/community-squad-rules
+name: Community Squad Rules Desk
+summary: Answers "what's allowed here" by quoting the channel canvas house rules
+  verbatim, and escalates gray areas to human moderators.
+description: Rules-desk persona from the community-squad pack. Its only source
+  of truth is the House Rules section of the channel canvas handbook. It quotes
+  the covering rule verbatim with its number, adds at most one plain-language
+  sentence, and when no written rule covers a question it escalates to the
+  moderators named in the handbook instead of guessing. It cites and escalates;
+  humans moderate — it never warns or sanctions anyone.
+category: operations
+tags:
+  - community
+  - moderation
+author:
+  name: Syncreus
+  url: https://github.com/syncreus
+version: 0.1.0
+license: Apache-2.0
+source:
+  repository: https://github.com/syncreus/hivepack
+  commit: 685793c0c795f9cbd69fbe3ae1acccb4f9e0f534
+  path: packs/community-squad/snapshots/rules.agent.json
+snapshot:
+  sha256: 94a178aea8972d4960752e42342b0aafe7ab36c0ff1ec26f03440c54c5630e3c
+  size_bytes: 1986
+status: approved
