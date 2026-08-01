@@ -6,7 +6,7 @@ SHIPPED, READY (spec complete, start building), SPEC (needs a design pass).
 
 ---
 
-## 0. Fleet hardening: durable respond-to — READY, do first
+## 0. Fleet hardening: durable respond-to (READY, do first)
 
 **Problem.** `buzzctl fleet set --respond anyone` writes both `respond_to`
 and `definition_respond_to` in the managed-agents store, and the value holds
@@ -25,7 +25,7 @@ long-term is one made through the desktop's own edit form.
   `owner-only` gate (owner attestation, NIP-OA), so a true test requires a
   message from an identity with a DIFFERENT owner.
 
-**Prime suspect.** `teams.json` next to `managed-agents.json` — likely the
+**Prime suspect.** `teams.json` next to `managed-agents.json`: likely the
 canonical definition store the desktop projects from on rewrite. Second
 suspect: per-definition state inside the desktop's sqlite (`retention.db`).
 
@@ -40,7 +40,7 @@ suspect: per-definition state inside the desktop's sqlite (`retention.db`).
 
 ---
 
-## 1. buzzctl fleet + mem portability — SHIPPED (harden next)
+## 1. buzzctl fleet + mem portability (SHIPPED (harden next))
 
 `fleet status` (table or `--json`), `fleet set` (bulk model / runtime /
 respond / env / avatar with automatic desktop quit, backup, relaunch),
@@ -54,7 +54,7 @@ builtins leave stubs behind).
 
 ---
 
-## 2. ReceiptMem: provenance-first workspace memory — READY
+## 2. ReceiptMem: provenance-first workspace memory (READY)
 
 **Problem.** Multi-agent chat gets amnesia. Buzz engrams are per-agent and
 per-machine; channel knowledge evaporates. The community's most-wished item.
@@ -63,13 +63,13 @@ per-machine; channel knowledge evaporates. The community's most-wished item.
 recall shared context, not just the memory agent itself.
 
 **Components.**
-- `receiptmem/store.py` — sqlite with FTS5: entry, author pubkey, channel,
+- `receiptmem/store.py`: sqlite with FTS5: entry, author pubkey, channel,
   thread, event id, created_at, salience, tombstone.
-- `receiptmem/listener.py` — buzz-cli subscription loop as the mem agent
+- `receiptmem/listener.py`: buzz-cli subscription loop as the mem agent
   identity: `!remember` (verbatim, high salience), `!recall <q>`, `!forget
   <id>` (author or operator only), plus passive decision-distillation from
   messages it sees (subscribe=all, kinds=9).
-- `receiptmem/mcp_server.py` — one tool: `recall(query, channel?) ->
+- `receiptmem/mcp_server.py`: one tool: `recall(query, channel?) ->
   [{text, author, date, event_id}]`, so every agent's harness can query
   shared memory. This is the moat: memory as infrastructure, not a chatbot.
 - Persona: reply format is receipts-first (`[Decision] … — @who, date,
@@ -87,7 +87,7 @@ the first through the MCP tool.
 
 ---
 
-## 3. StopGate kit: approval, CI, and budget gates — READY
+## 3. StopGate kit: approval, CI, and budget gates (READY)
 
 **Problem.** Trust is the #1 objection to agent teams. Buzz's MCP lifecycle
 hooks (`_Stop`, see `docs/MCP_DRIVEN_HOOKS.md` in block/buzz) exist but
@@ -95,7 +95,7 @@ first-party gate glue is unfinished. An agent should not be able to end its
 turn with red CI or without human sign-off.
 
 **Components.**
-- `stopgate/server.py` — MCP server implementing `_Stop`: returns "object"
+- `stopgate/server.py`: MCP server implementing `_Stop`: returns "object"
   (keep working / wait) until gates pass.
 - Gates, each independently configurable per agent:
   - `ci`: latest GitHub Actions run on the working branch is green
@@ -105,7 +105,7 @@ turn with red CI or without human sign-off.
   - `budget`: session spend estimate under $N (token counting per harness).
   - `secrets`: last tool outputs contain no key-shaped material (reuse
     hivepack's SECRETISH scan).
-- `stopgate.toml` — per-agent gate config; ships with sane defaults for
+- `stopgate.toml`: per-agent gate config; ships with sane defaults for
   implementer-type agents.
 
 **MVP cut.** `ci` + `approval` gates, wired to one agent, with a 60-second
@@ -119,9 +119,9 @@ configurable timeout so a dead gate never bricks an agent.
 
 ---
 
-## 4. Branch Theater: visible agent work — SPEC
+## 4. Branch Theater: visible agent work (SPEC)
 
-**Problem.** "I lose fidelity of what agents are doing" — agent work is
+**Problem.** "I lose fidelity of what agents are doing": agent work is
 buried in prose. Diffs, tool calls, and CI status deserve rich rendering.
 
 **Shape.** A renderer bot subscribed to NIP-34 git events (patches, PRs,
@@ -134,22 +134,22 @@ markdown limits before building.
 
 ---
 
-## 5. Community pack: greeter, rules, onboarding — READY (generalize)
+## 5. Community pack: greeter, rules, onboarding (READY (generalize))
 
 A second built-in pack for hivepack: `community-squad`.
-- **greeter** — wakes ONLY on channel-join events (`BUZZ_ACP_KINDS=40099`),
+- **greeter**: wakes ONLY on channel-join events (`BUZZ_ACP_KINDS=40099`),
   so chat cannot spam it. One warm welcome per member, never twice. Proven
   pattern, already validated privately.
-- **rules** — answers "what's allowed here" from the channel canvas, cites
+- **rules**: answers "what's allowed here" from the channel canvas, cites
   the rule verbatim, escalates gray areas to moderators.
-- **canvas templates** — starter handbook: desks, pipeline, house rules.
+- **canvas templates**: starter handbook: desks, pipeline, house rules.
 
 **MVP cut.** Greeter + canvas template shipped as a pack; rules bot after.
 **Estimate.** One session (greeter persona is done; packaging + docs).
 
 ---
 
-## 6. Upstream PRs to block/buzz — SPEC, high goodwill
+## 6. Upstream PRs to block/buzz (SPEC, high goodwill)
 
 1. `agents draft-create`: accept `--runtime`, `--model`, `--env`,
    `--respond-to` so programmatic creation carries full config (today only
@@ -157,7 +157,7 @@ A second built-in pack for hivepack: `community-squad`.
 2. Agent key rotation: regenerate an agent's keypair in place; today the key
    is shown once and rotation means delete-and-recreate.
 3. Snapshot v2: zip format carrying skills (spec'd as deferred in
-   agent_snapshot.rs) — hivepack convert is the natural test case.
+   agent_snapshot.rs): hivepack convert is the natural test case.
 4. Docs: `respond_to` vs `definition_respond_to` semantics and which store
    is canonical (findings from workstream 0).
 
