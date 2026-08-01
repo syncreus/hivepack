@@ -6,37 +6,42 @@ SHIPPED, READY (spec complete, start building), SPEC (needs a design pass).
 
 ---
 
-## 0. Fleet hardening: durable respond-to (READY, do first)
+## 0. Fleet hardening: durable respond-to (SHIPPED)
 
-**Problem.** `buzzctl fleet set --respond anyone` writes both `respond_to`
-and `definition_respond_to` in the managed-agents store, and the value holds
-across one or two desktop restarts, then reverts to `owner-only` when the
-desktop rewrites an agent's records. The only write observed to survive
-long-term is one made through the desktop's own edit form.
+**Root cause (found by reading block/buzz `managed_agents/` source, not by
+store diffing).** The managed-agents store mixes two record kinds: key-less
+DEFINITION records (`display_name` set, empty `pubkey`) and INSTANCE records
+(`pubkey` set, `name` set, `display_name` null). `BUZZ_ACP_RESPOND_TO` is
+spawned from the INSTANCE record's `respond_to`. The old `fleet set` matched
+on `display_name`, so it only ever edited definition records — whose
+`respond_to` field is cosmetic and reset to `owner-only` by every persona
+save (`AgentDefinition::into_agent_record` fills it with
+`RespondTo::default()`). That reset is the "revert" fleet status showed; the
+instances were never edited at all.
 
-**Evidence trail.**
-- File edits to `runtime`, `model`, `env_vars`, and `avatar_url` all persist
-  indefinitely. Only the respond fields revert.
-- The newest-written agent keeps `anyone` until its records are next
-  rewritten; older agents drift back one by one.
-- Live ground truth is the spawned process env: `BUZZ_ACP_RESPOND_TO` in the
-  buzz-acp process. Check it with `ps eww` rather than trusting the store.
-- Note when testing: agents owned by the same operator appear to pass the
-  `owner-only` gate (owner attestation, NIP-OA), so a true test requires a
-  message from an identity with a DIFFERENT owner.
+**Suspects cleared.** `teams.json` holds only the builtin Welcome Team.
+`retention.db` (per-scope, `agents/retention/<scope>.db`) is real but needs
+no direct writes: the desktop's boot reconcile
+(`reconcile_agents_to_events`, present in the installed build) projects
+edited instance records into signed kind:30177 events with a monotonic
+`created_at` bump and `pending_sync=1`, and the flush loop publishes them to
+the relay. Editing the instance records while the desktop is quit IS the
+durable path.
 
-**Prime suspect.** `teams.json` next to `managed-agents.json`: likely the
-canonical definition store the desktop projects from on rewrite. Second
-suspect: per-definition state inside the desktop's sqlite (`retention.db`).
+**Fix.** `fleet set` now matches records by `display_name` OR `name`;
+`--respond` writes `respond_to` on instance records (the value that spawns)
+and `definition_respond_to` on definition records (seeds future instances).
+`fleet status` reads instance truth merged with definition env. Unit tests
+against a fixture store in `tests/test_buzzctl.py`.
 
-**Build.**
-1. Diff `teams.json` before/after flipping respond-to in the desktop UI once.
-2. If teams.json is canonical: extend `fleet set` to edit it (same
-   quit/backup/relaunch discipline). If sqlite: same via `sqlite3`.
-3. Acceptance gate: `fleet set --respond anyone --all` survives THREE desktop
-   restart cycles and a message from a foreign-owner identity gets a reply.
+**Verified.** `fleet set --respond anyone --all` → all 21 instance records,
+all 21 retained kind:30177 events (synced, `pending_sync=0`), and every live
+`buzz-acp` process env (`ps eww`) show `anyone` across three desktop
+quit/relaunch cycles.
 
-**Estimate.** One focused session.
+**Still open (moved to workstream 6).** Foreign-owner reply test needs a
+second identity; `agents draft-create --respond-to` upstream would remove
+the need for post-create flips.
 
 ---
 
@@ -47,14 +52,18 @@ respond / env / avatar with automatic desktop quit, backup, relaunch),
 `mem-export` / `mem-import` (engram round-trip via `buzz mem`, solving the
 "my agent's memories are trapped on this machine" problem).
 
-**Hardening list.** Unit tests against a fixture store; `fleet set --dry-run`;
-`fleet doctor` cross-check of store values vs live process env (catches the
-respond-to drift automatically); ghost-record cleanup subcommand (archived
-builtins leave stubs behind).
+**Hardening list.** SHIPPED 2026-08-01: unit tests against a fixture store
+(`tests/test_buzzctl.py`); `fleet set --dry-run` (prints planned changes,
+never writes or bounces the desktop — a no-op set also skips the bounce);
+`fleet doctor` cross-check of store values vs live process env (respond_to,
+model, subscribe, kinds; flags drifted / not-running / unmanaged agents,
+exit 2 on drift; env extraction is allowlisted so BUZZ_PRIVATE_KEY never
+leaves the process line). Still open: ghost-record cleanup subcommand
+(archived builtins leave stubs behind).
 
 ---
 
-## 2. ReceiptMem: provenance-first workspace memory (READY)
+## 2. ReceiptMem: provenance-first workspace memory (SHIPPED (store + listener + MCP); distill is v2)
 
 **Problem.** Multi-agent chat gets amnesia. Buzz engrams are per-agent and
 per-machine; channel knowledge evaporates. The community's most-wished item.
@@ -75,9 +84,14 @@ recall shared context, not just the memory agent itself.
 - Persona: reply format is receipts-first (`[Decision] … — @who, date,
   event <id>`), refuses to store secrets, never invents history.
 
-**MVP cut.** Store + listener + `!remember`/`!recall` with receipts. Distill
-mode and MCP server are v2. Prompt-only mem personas (like ship-squad's)
-migrate by pointing at the same store.
+**MVP cut (shipped 2026-08-01).** `receiptmem/store.py` (sqlite + FTS5,
+tombstone forgets, watermark + seen-event state) and `receiptmem/listener.py`
+(`receiptmem --channel <uuid>`), handling `!remember`/`!recall`/`!forget`/
+`!memories` with receipts pinned to the original message's event id. Refuses
+key-shaped content (SECRETISH_RE). E2E-proven: store, two listener restarts,
+recall returned the original event id. Distill mode and MCP server are v2.
+Both mem personas updated to defer `!` commands to the daemon (the running
+desktop mem agent double-posts until its persona is redeployed).
 
 **Acceptance gates.** Recall returns the pinned event id of the original
 message; restart loses nothing; a second agent retrieves a memory stored via
@@ -87,7 +101,7 @@ the first through the MCP tool.
 
 ---
 
-## 3. StopGate kit: approval, CI, and budget gates (READY)
+## 3. StopGate kit: approval, CI, and budget gates (SHIPPED (MVP: ci + approval))
 
 **Problem.** Trust is the #1 objection to agent teams. Buzz's MCP lifecycle
 hooks (`_Stop`, see `docs/MCP_DRIVEN_HOOKS.md` in block/buzz) exist but
@@ -115,7 +129,28 @@ demo: agent finishes work, tries to stop, gets objected, waits for the 👍.
 reaction releases it within one poll interval; gates fail OPEN after a
 configurable timeout so a dead gate never bricks an agent.
 
-**Estimate.** Two sessions. Best demo-clip potential of the list.
+**Shipped 2026-08-01.** `src/hivepack/stopgate/server.py` (console script
+`stopgate`, stdlib-only MCP stdio server), README section with config +
+60-second demo, 19 pytest cases including an stdio contract test that
+drives the built server exactly like buzz-agent does. Red-CI blocking and
+timeout fail-open proven by tests; approval release proven LIVE in the
+`stopgate-demo` channel (native buzz-agent + qwen2.5:7b via ollama,
+manual buzz-acp spawn): request posted on first `_Stop`, objection while
+unreacted, `allow` on the poll after the 👍 from the configured approver.
+
+**Learned building it.** Hooks fire only in the native `buzz-agent`
+runtime (claude/codex/goose ACP harnesses never call them). The desktop
+pins the MCP slot per-runtime (`BUZZ_ACP_MCP_COMMAND` is a reserved env
+key and record `mcp_command` is ignored at spawn), so wiring is a manual
+`buzz-acp` spawn until upstream allows per-record MCP override — worth
+adding to the workstream-6 PR list. buzz-agent `env_clear()`s MCP
+children (launcher must bake `STOPGATE_CONFIG`), and every `_Stop` must
+answer inside 2.5s total or the objection silently becomes an allow —
+the server budgets backend calls against a 2.0s deadline and skips them
+(objecting with a retry note) when out of time.
+
+**Next.** `budget` + `secrets` gates; desktop-managed wiring via upstream
+PR; per-agent stopgate.toml distribution in packs.
 
 ---
 
@@ -134,18 +169,19 @@ markdown limits before building.
 
 ---
 
-## 5. Community pack: greeter, rules, onboarding (READY (generalize))
+## 5. Community pack: greeter, rules, onboarding (SHIPPED)
 
 A second built-in pack for hivepack: `community-squad`.
 - **greeter**: wakes ONLY on channel-join events (`BUZZ_ACP_KINDS=40099`),
   so chat cannot spam it. One warm welcome per member, never twice. Proven
-  pattern, already validated privately.
+  pattern, generalized from the privately validated original.
 - **rules**: answers "what's allowed here" from the channel canvas, cites
   the rule verbatim, escalates gray areas to moderators.
-- **canvas templates**: starter handbook: desks, pipeline, house rules.
+- **canvas template**: starter handbook (`canvas/handbook-template.md`):
+  start-here, desks, pipeline, house rules, moderators.
 
-**MVP cut.** Greeter + canvas template shipped as a pack; rules bot after.
-**Estimate.** One session (greeter persona is done; packaging + docs).
+Shipped with both personas plus the template in one pass; `hivepack verify`
+became pack-aware along the way (it had ship-squad's roster hardcoded).
 
 ---
 

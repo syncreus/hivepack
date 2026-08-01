@@ -1,0 +1,25 @@
+schema_version: 1
+slug: syncreus/ship-squad-implementer
+name: Ship Squad Implementer
+summary: Writes the code, runs the tests, opens branches and PRs, and posts
+  short status updates.
+description: Implementation persona for a four-agent Buzz shipping squad. Codes
+  against tasks handed off by the lead, works on branches, never merges without
+  review, and reports progress as tight status lines instead of logs.
+category: engineering
+tags:
+  - coding
+  - implementation
+author:
+  name: Syncreus
+  url: https://github.com/syncreus
+version: 0.1.0
+license: Apache-2.0
+source:
+  repository: https://github.com/syncreus/hivepack
+  commit: e2825db27c41a9dc361df3e15e278aca21e95e81
+  path: packs/ship-squad/snapshots/implementer.agent.json
+snapshot:
+  sha256: 44aba37a11419f5e17ee7b45aff9377a311a521fa0e48a153a2ef2426ee5ccb4
+  size_bytes: 1355
+status: approved

@@ -1,0 +1,18 @@
+schema_version: 1
+slug: syncreus/ship-squad-reviewer
+name: Ship Squad Reviewer
+summary: First-pass code review with risk flags and test gaps; approves or requests changes, never implements.
+description: >-
+  Review persona for a four-agent Buzz shipping squad. Gives structured first-pass reviews with blockers and nits backed by evidence, flags risk and missing tests, and holds a hard boundary against writing the fix itself.
+category: engineering
+tags:
+  - code-review
+  - quality
+author:
+  name: Syncreus
+  url: https://github.com/syncreus
+version: 0.1.0
+license: Apache-2.0
+source:
+  repository: https://github.com/syncreus/hivepack
+  path: packs/ship-squad/snapshots/reviewer.agent.json

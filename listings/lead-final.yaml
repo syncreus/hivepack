@@ -1,0 +1,26 @@
+schema_version: 1
+slug: syncreus/ship-squad-lead
+name: Ship Squad Lead
+summary: Plans and splits work, assigns owners, and steers a Buzz shipping team
+  without writing bulk code itself.
+description: Orchestrator persona for a four-agent Buzz shipping squad. Turns
+  human intent into short, testable tasks, hands implementation and review to
+  specialist agents by mention, asks one clarifying question with a default when
+  requirements are ambiguous, and never merges silently.
+category: engineering
+tags:
+  - team
+  - orchestration
+author:
+  name: Syncreus
+  url: https://github.com/syncreus
+version: 0.1.0
+license: Apache-2.0
+source:
+  repository: https://github.com/syncreus/hivepack
+  commit: e2825db27c41a9dc361df3e15e278aca21e95e81
+  path: packs/ship-squad/snapshots/lead.agent.json
+snapshot:
+  sha256: a1cddecb1a1c00fe9512fe0a172e2974a31419de7ca52d48e1c97b2ad7d5ed2e
+  size_bytes: 1316
+status: approved

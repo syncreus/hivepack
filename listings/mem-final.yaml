@@ -1,0 +1,26 @@
+schema_version: 1
+slug: syncreus/ship-squad-mem
+name: Ship Squad Mem
+summary: "Receipt-backed team memory: captures decisions and answers recalls
+  with author, time, and event provenance."
+description: Memory persona for a four-agent Buzz shipping squad. Stores
+  decisions on request, answers recalls with provenance, surfaces conflicts
+  between old and new information instead of overwriting, and refuses to store
+  secrets.
+category: engineering
+tags:
+  - memory
+  - provenance
+author:
+  name: Syncreus
+  url: https://github.com/syncreus
+version: 0.1.0
+license: Apache-2.0
+source:
+  repository: https://github.com/syncreus/hivepack
+  commit: e2825db27c41a9dc361df3e15e278aca21e95e81
+  path: packs/ship-squad/snapshots/mem.agent.json
+snapshot:
+  sha256: cca48b40774126433fc6fc39ba3d18a9fe6152598360378552be538a057d78c4
+  size_bytes: 1670
+status: approved
