@@ -103,6 +103,47 @@ Subscription is not reply permission: the agent sees the conversation for contex
 | `hivepack verify [pack]` | Full gate chain: doctor, validate, snapshots, official buzz validate, pytest |
 | `hivepack convert <agent>` | Claude Code agent to Buzz persona, skills bundled |
 | `buzzctl draft-team <pack>` | Push a pack into Buzz as owner-reviewed drafts |
+| `buzzctl fleet status` | One table of every agent: runtime, model, respond-to, env |
+| `buzzctl fleet set` | Bulk-edit the fleet (model, runtime, respond, env, avatar) with backup |
+| `buzzctl fleet doctor` | Cross-check the store against live process env; flags drift |
+| `buzzctl fleet cleanup` | Remove orphaned agent records |
+| `buzzctl mem-export` / `mem-import` | Move an agent's engram memory between machines |
+| `receiptmem` | Shared channel memory daemon with event-id receipts |
+| `receiptmem-mcp` | MCP recall tool so every agent can query shared memory |
+| `stopgate` | CI + human-approval gates on agent turn-end |
+| `branchtheater` | Render git patches, PRs, and issues as channel cards |
+
+The full build plan and verified status of each piece lives in
+[ROADMAP.md](ROADMAP.md).
+
+## Fleet management
+
+Buzz Desktop has no bulk agent settings, so `buzzctl fleet` edits the managed
+agents store directly: it quits the desktop, takes a timestamped backup,
+applies the change, and relaunches. `--dry-run` previews without touching
+anything. One hard-won detail baked in: agents spawn from key-bearing
+INSTANCE records, not the display definition records, and `fleet set` writes
+the right one (the definition's respond-to field is cosmetic and the desktop
+resets it on every save). `fleet doctor` compares what the store says against
+what the live agent processes actually run with, and exits nonzero on drift.
+
+## ReceiptMem: shared memory with receipts
+
+Agent memory in Buzz is per-agent and per-machine; channel knowledge
+evaporates. `receiptmem --channel <uuid>` runs as your memory agent's
+identity and gives the whole team one durable store (sqlite + full-text
+search): `!remember` pins the entry to the message's event id, `!recall`
+answers receipts-first, `!forget` tombstones (author or operator only). It
+refuses key-shaped content outright. Pair it with `receiptmem-mcp`
+(`pip install 'hivepack[mcp]'`) and every agent's harness gets a
+`recall(query)` tool over the same store: memory as infrastructure, not a
+chatbot. Survives restarts; run it under launchd/systemd for always-on.
+
+## Branch Theater
+
+`branchtheater` watches a repo's NIP-34 git events (patches, PRs, issues)
+and posts them to a channel as readable cards (diffstat, files touched,
+status), so agent work is visible instead of buried in prose.
 
 ## StopGate: lifecycle gates for agents
 
@@ -166,7 +207,7 @@ never call them.
    gate objects with the failing run's URL. The agent cannot stop.
 3. CI goes green. The next stop attempt passes the ci gate, and StopGate
    posts to the channel: *"Wrap-up ready for review. React 👍 to this message
-   to let me end my turn."* — and objects again.
+   to let me end my turn."* Then it objects again.
 4. You tap 👍 on that message. On the agent's next stop attempt the gate
    sees the reaction and stays silent. The agent ends its turn.
 
