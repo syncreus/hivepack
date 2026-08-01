@@ -16,10 +16,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+mcp = ["mcp>=1.0"]
 
 [project.scripts]
 hivepack = "hivepack.cli:main"
 buzzctl = "hivepack.buzzctl:main"
+receiptmem = "hivepack.receiptmem.listener:main"
+receiptmem-mcp = "hivepack.receiptmem.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

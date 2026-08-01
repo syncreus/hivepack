@@ -63,7 +63,7 @@ leaves the process line). Still open: ghost-record cleanup subcommand
 
 ---
 
-## 2. ReceiptMem: provenance-first workspace memory (READY)
+## 2. ReceiptMem: provenance-first workspace memory (SHIPPED (store + listener + MCP); distill is v2)
 
 **Problem.** Multi-agent chat gets amnesia. Buzz engrams are per-agent and
 per-machine; channel knowledge evaporates. The community's most-wished item.
@@ -84,9 +84,14 @@ recall shared context, not just the memory agent itself.
 - Persona: reply format is receipts-first (`[Decision] … — @who, date,
   event <id>`), refuses to store secrets, never invents history.
 
-**MVP cut.** Store + listener + `!remember`/`!recall` with receipts. Distill
-mode and MCP server are v2. Prompt-only mem personas (like ship-squad's)
-migrate by pointing at the same store.
+**MVP cut (shipped 2026-08-01).** `receiptmem/store.py` (sqlite + FTS5,
+tombstone forgets, watermark + seen-event state) and `receiptmem/listener.py`
+(`receiptmem --channel <uuid>`), handling `!remember`/`!recall`/`!forget`/
+`!memories` with receipts pinned to the original message's event id. Refuses
+key-shaped content (SECRETISH_RE). E2E-proven: store, two listener restarts,
+recall returned the original event id. Distill mode and MCP server are v2.
+Both mem personas updated to defer `!` commands to the daemon (the running
+desktop mem agent double-posts until its persona is redeployed).
 
 **Acceptance gates.** Recall returns the pinned event id of the original
 message; restart loses nothing; a second agent retrieves a memory stored via
