@@ -58,13 +58,12 @@ def existing_agent_names() -> set[str]:
         recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return set()
-    # Full display names, lowercased. First-word matching is too coarse
-    # ("Beacon Design" would shadow "Beacon SEO").
-    return {
-        str(r["display_name"]).strip().lower()
-        for r in recs
-        if isinstance(r, dict) and r.get("display_name")
-    }
+    # First word only: display names carry emoji suffixes ("Editor 🗞️").
+    names = set()
+    for r in recs:
+        if isinstance(r, dict) and r.get("display_name"):
+            names.add(str(r["display_name"]).split()[0].strip().lower())
+    return names
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -128,14 +127,13 @@ def cmd_draft_team(args: argparse.Namespace) -> int:
             continue
         prompt = compose_prompt(pack_dir, persona.system_prompt)
         # Existing agent with the same display name → owner-reviewed update.
-        is_update = persona.display_name.strip().lower() in existing
+        base_display = persona.display_name.split()[0].strip().lower()
+        is_update = persona.name.lower() in existing or base_display in existing
         if is_update:
-            # draft-update matches the agent's CURRENT name exactly — emoji
-            # suffix included ("Mem 🧾"), not the bare first word.
             cli_args = [
                 "agents", "draft-update",
                 "--channel", args.channel,
-                "--agent-name", persona.display_name,
+                "--agent-name", persona.display_name.split()[0],
                 "--system-prompt", "-",
             ]
             if args.runtime_for and persona.name in dict(p.split("=") for p in args.runtime_for.split(",")):
@@ -186,15 +184,25 @@ def _desktop_quit_and_relaunch(edit_fn) -> str:
     return f"{result} (backup: {backup})"
 
 
+def _normalize_label(label: str) -> str | None:
+    """Agent name minus decorative emoji tokens ("Beacon SEO 🔦" -> "Beacon SEO").
+
+    Grouping MUST use the full name: distinct agents can share a first word
+    ("Beacon Design" / "Beacon SEO"), and first-word grouping cross-compared
+    one agent's store against the other's live process — a false drift page.
+    """
+    words = [w for w in label.split() if any(c.isascii() and c.isalnum() for c in w)]
+    return " ".join(words) or (label.strip() or None)
+
+
 def _record_label(r: dict) -> str | None:
-    """First word of the agent's name, lowercased key across record kinds.
+    """Normalized agent name across record kinds.
 
     The unified store mixes key-less DEFINITION records (display_name set,
     empty pubkey) with INSTANCE records (pubkey set, name set, display_name
     None). Both kinds must match so callers can address either.
     """
-    label = r.get("display_name") or r.get("name") or ""
-    return label.split()[0] if label.strip() else None
+    return _normalize_label(r.get("display_name") or r.get("name") or "")
 
 
 def _fleet_view() -> dict[str, dict]:
@@ -239,9 +247,9 @@ def cmd_fleet_status(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(seen, indent=2))
     else:
-        print(f"{'agent':12} {'runtime':8} {'model':22} {'respond':11} {'sub':4} kinds")
+        print(f"{'agent':14} {'runtime':8} {'model':22} {'respond':11} {'sub':4} kinds")
         for n, c in sorted(seen.items()):
-            print(f"{n:12} {c.get('runtime') or '-':8} {c.get('model') or '-':22} "
+            print(f"{n:14} {c.get('runtime') or '-':8} {c.get('model') or '-':22} "
                   f"{c.get('respond_to') or '-':11} {c.get('subscribe') or '-':4} {c.get('kinds') or '-'}")
     return 0
 
@@ -277,9 +285,9 @@ def _live_agent_envs() -> dict[str, dict[str, str]]:
             m = re.search(rf"{key}=(.*?)(?= [A-Z_][A-Z0-9_]*=|$)", line)
             if m:
                 env[key] = m.group(1).strip()
-        title = env.pop("BUZZ_ACP_SESSION_TITLE", "")
-        if title.strip():
-            live[title.split()[0]] = env
+        title = _normalize_label(env.pop("BUZZ_ACP_SESSION_TITLE", ""))
+        if title:
+            live[title] = env
     return live
 
 
@@ -324,7 +332,7 @@ def cmd_fleet_doctor(args: argparse.Namespace) -> int:
             detail = "; ".join(
                 f"{f}: store={d['store']} live={d['live']}" for f, d in r["drift"].items()
             )
-            print(f"[{flag}] {r['agent']:12} {r['state']}" + (f" ({detail})" if detail else ""))
+            print(f"[{flag}] {r['agent']:14} {r['state']}" + (f" ({detail})" if detail else ""))
         if not live:
             print("RESULT: FAIL — no live buzz-acp processes (desktop not running?)")
         else:
@@ -416,11 +424,13 @@ def cmd_fleet_set(args: argparse.Namespace) -> int:
         for r in recs:
             if not isinstance(r, dict):
                 continue
-            first = _record_label(r)
-            if not first:
+            label = _record_label(r)
+            if not label:
                 continue
-            first = first.lower()
-            if targets is not None and first not in targets:
+            first = label.lower()
+            # A target matches the full name ("beacon seo") or, for
+            # convenience, the first word ("atlas"; "beacon" hits both Beacons).
+            if targets is not None and first not in targets and first.split()[0] not in targets:
                 continue
             if r.get("pubkey"):
                 # INSTANCE record: respond_to here is what the desktop spawns

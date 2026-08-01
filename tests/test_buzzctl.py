@@ -162,6 +162,39 @@ def test_fleet_cleanup_clean_store_is_noop(tmp_path, monkeypatch, capsys):
     assert "no ghost records" in capsys.readouterr().out
 
 
+def test_shared_first_word_agents_never_collide(tmp_path, monkeypatch, capsys):
+    """Two agents named 'Beacon *' must not be cross-compared (live bug:
+    doctor paged model drift by comparing Beacon SEO's store against Beacon
+    Design's process)."""
+    store = tmp_path / "managed-agents.json"
+    store.write_text(json.dumps([
+        {"name": "Beacon Design ✨", "pubkey": "d1", "respond_to": "anyone",
+         "model": "opus", "updated_at": "2026-01-01T00:00:01+00:00"},
+        {"name": "Beacon SEO 🔦", "pubkey": "s1", "respond_to": "anyone",
+         "model": "sol", "updated_at": "2026-01-01T00:00:02+00:00"},
+    ]), encoding="utf-8")
+    monkeypatch.setattr(buzzctl, "MANAGED_AGENTS", store)
+    monkeypatch.setattr(buzzctl, "_live_agent_envs", lambda: {
+        "Beacon Design": {"BUZZ_ACP_RESPOND_TO": "anyone", "BUZZ_ACP_MODEL": "opus"},
+        "Beacon SEO": {"BUZZ_ACP_RESPOND_TO": "anyone", "BUZZ_ACP_MODEL": "sol"},
+    })
+    rc = buzzctl.main(["fleet", "doctor", "--json"])
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0 and out["ok"] is True
+    assert {r["agent"]: r["state"] for r in out["agents"]} == {
+        "Beacon Design": "ok", "Beacon SEO": "ok"}
+
+    # fleet set: full name hits one; first word hits both.
+    monkeypatch.setattr(buzzctl, "_desktop_quit_and_relaunch", lambda fn: fn())
+    buzzctl.main(["fleet", "set", "--agents", "beacon seo", "--respond", "owner-only"])
+    recs = {r["name"]: r for r in json.loads(store.read_text(encoding="utf-8"))}
+    assert recs["Beacon SEO 🔦"]["respond_to"] == "owner-only"
+    assert recs["Beacon Design ✨"]["respond_to"] == "anyone"
+    buzzctl.main(["fleet", "set", "--agents", "beacon", "--respond", "anyone"])
+    recs = {r["name"]: r for r in json.loads(store.read_text(encoding="utf-8"))}
+    assert all(r["respond_to"] == "anyone" for r in recs.values())
+
+
 def test_fleet_status_reads_instance_truth(tmp_path, monkeypatch, capsys):
     _with_store(tmp_path, monkeypatch)
     recs = json.loads(buzzctl.MANAGED_AGENTS.read_text(encoding="utf-8"))
