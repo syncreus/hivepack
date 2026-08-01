@@ -58,12 +58,13 @@ def existing_agent_names() -> set[str]:
         recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return set()
-    # First word only: display names carry emoji suffixes ("Editor 🗞️").
-    names = set()
-    for r in recs:
-        if isinstance(r, dict) and r.get("display_name"):
-            names.add(str(r["display_name"]).split()[0].strip().lower())
-    return names
+    # Full display names, lowercased. First-word matching is too coarse
+    # ("Beacon Design" would shadow "Beacon SEO").
+    return {
+        str(r["display_name"]).strip().lower()
+        for r in recs
+        if isinstance(r, dict) and r.get("display_name")
+    }
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -127,13 +128,14 @@ def cmd_draft_team(args: argparse.Namespace) -> int:
             continue
         prompt = compose_prompt(pack_dir, persona.system_prompt)
         # Existing agent with the same display name → owner-reviewed update.
-        base_display = persona.display_name.split()[0].strip().lower()
-        is_update = persona.name.lower() in existing or base_display in existing
+        is_update = persona.display_name.strip().lower() in existing
         if is_update:
+            # draft-update matches the agent's CURRENT name exactly — emoji
+            # suffix included ("Mem 🧾"), not the bare first word.
             cli_args = [
                 "agents", "draft-update",
                 "--channel", args.channel,
-                "--agent-name", persona.display_name.split()[0],
+                "--agent-name", persona.display_name,
                 "--system-prompt", "-",
             ]
             if args.runtime_for and persona.name in dict(p.split("=") for p in args.runtime_for.split(",")):
