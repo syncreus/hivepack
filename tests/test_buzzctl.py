@@ -129,6 +129,30 @@ def test_fleet_doctor_fails_with_no_live_processes(tmp_path, monkeypatch, capsys
     assert "no live buzz-acp" in capsys.readouterr().out
 
 
+def test_fleet_set_rejects_reserved_env_keys(tmp_path, monkeypatch, capsys):
+    store = _with_store(tmp_path, monkeypatch)
+    before = store.read_text(encoding="utf-8")
+
+    def boom(fn):
+        raise AssertionError("reserved-key set must not bounce the desktop")
+
+    monkeypatch.setattr(buzzctl, "_desktop_quit_and_relaunch", boom)
+    # Case-insensitive, matching the desktop's check.
+    rc = buzzctl.main(["fleet", "set", "--all", "--env", "buzz_acp_mcp_command=/x/mcp"])
+    assert rc == 1
+    assert store.read_text(encoding="utf-8") == before
+    err = capsys.readouterr().err
+    assert "reserved key" in err and "per harness" in err
+
+
+def test_fleet_set_nonreserved_env_still_works(tmp_path, monkeypatch):
+    store = _with_store(tmp_path, monkeypatch)
+    rc = buzzctl.main(["fleet", "set", "--agents", "atlas", "--env", "BUZZ_ACP_KINDS=9"])
+    assert rc == 0
+    dfn = next(r for r in json.loads(store.read_text(encoding="utf-8")) if not r.get("pubkey"))
+    assert dfn["env_vars"]["BUZZ_ACP_KINDS"] == "9"
+
+
 def test_fleet_cleanup_lists_and_removes_orphans(tmp_path, monkeypatch, capsys):
     store = _with_store(tmp_path, monkeypatch)
     recs = json.loads(store.read_text(encoding="utf-8"))

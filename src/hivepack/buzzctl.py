@@ -393,12 +393,38 @@ def cmd_fleet_cleanup(args: argparse.Namespace) -> int:
     return 0
 
 
+# Mirror of the desktop's RESERVED_ENV_KEYS (env_vars.rs), matched
+# case-insensitively like the desktop. Spawn silently strips these from
+# env_vars, so writing one via --env is a guaranteed no-op that costs two
+# desktop bounces to diagnose (found the hard way wiring MCP servers).
+_RESERVED_ENV_KEYS = frozenset(k.lower() for k in (
+    "BUZZ_PRIVATE_KEY", "NOSTR_PRIVATE_KEY", "BUZZ_AUTH_TAG", "BUZZ_API_TOKEN",
+    "BUZZ_ACP_PRIVATE_KEY", "BUZZ_ACP_API_TOKEN", "BUZZ_RELAY_URL",
+    "BUZZ_ACP_AGENT_COMMAND", "BUZZ_ACP_AGENT_ARGS", "BUZZ_ACP_MCP_COMMAND",
+    "BUZZ_ACP_RESPOND_TO", "BUZZ_ACP_RESPOND_TO_ALLOWLIST", "BUZZ_ACP_AGENT_OWNER",
+    "BUZZ_ACP_SETUP_PAYLOAD", "BUZZ_MANAGED_AGENT", "BUZZ_MANAGED_AGENT_START_NONCE",
+))
+_RESERVED_ENV_HINTS = {
+    "buzz_acp_respond_to": "use --respond instead",
+    "buzz_acp_respond_to_allowlist": "set via the desktop edit form",
+    "buzz_acp_mcp_command": "MCP servers are wired per harness, not per agent record "
+                            "(claude mcp add / codex config.toml [mcp_servers.*] / grok mcp add)",
+}
+
+
 def cmd_fleet_set(args: argparse.Namespace) -> int:
     targets = None if args.all else {s.strip().lower() for s in (args.agents or "").split(",") if s.strip()}
     if targets is not None and not targets:
         print("pass --agents a,b or --all", file=sys.stderr)
         return 1
     env_pairs = dict(p.split("=", 1) for p in (args.env or []))
+    reserved = [k for k in env_pairs if k.lower() in _RESERVED_ENV_KEYS]
+    if reserved:
+        for k in reserved:
+            hint = _RESERVED_ENV_HINTS.get(k.lower(), "")
+            print(f"refusing --env {k}: reserved key, the desktop strips it at spawn"
+                  + (f" — {hint}" if hint else ""), file=sys.stderr)
+        return 1
     if not any([args.model, args.runtime, args.respond, env_pairs, args.avatar]):
         print("nothing to set (use --model/--runtime/--respond/--env/--avatar)", file=sys.stderr)
         return 1
