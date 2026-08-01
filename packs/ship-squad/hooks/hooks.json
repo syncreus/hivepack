@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "description": "Optional gate hooks for HivePack Ship Squad. Wire buzz-hooks or equivalent MCP lifecycle servers here when available.",
+  "recommended": [
+    {
+      "name": "approval-gate",
+      "purpose": "Object to end_turn until a human reacts with 👍 on the approval message",
+      "source": "https://github.com/mpiv-ai/buzz-hooks"
+    },
+    {
+      "name": "ci-gate",
+      "purpose": "Object to end_turn while the latest GitHub Actions run is red or still running",
+      "source": "https://github.com/mpiv-ai/buzz-hooks"
+    }
+  ],
+  "hooks": {}
+}

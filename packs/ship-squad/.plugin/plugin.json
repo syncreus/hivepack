@@ -1,0 +1,39 @@
+{
+  "$schema": "https://open-plugin-spec.org/schema/v1/plugin.json",
+  "id": "com.hivepack.ship-squad",
+  "name": "HivePack Ship Squad",
+  "version": "0.1.0",
+  "description": "Opinionated 4-agent shipping team for Buzz: lead, implementer, reviewer, and receipt-backed memory.",
+  "author": "HivePack",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/hivepack/hivepack",
+  "keywords": [
+    "buzz",
+    "agents",
+    "shipping",
+    "code-review",
+    "memory",
+    "hivepack"
+  ],
+  "engines": {
+    "buzz": ">=0.5.0"
+  },
+  "personas": [
+    "agents/lead.persona.md",
+    "agents/implementer.persona.md",
+    "agents/reviewer.persona.md",
+    "agents/mem.persona.md"
+  ],
+  "pack_instructions": "instructions.md",
+  "hooks_config": "hooks/hooks.json",
+  "defaults": {
+    "triggers": {
+      "mentions": true,
+      "keywords": [],
+      "all_messages": false
+    },
+    "subscribe": [],
+    "thread_replies": true,
+    "broadcast_replies": false
+  }
+}
