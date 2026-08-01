@@ -167,6 +167,137 @@ def cmd_draft_team(args: argparse.Namespace) -> int:
     return 0 if ok else 2
 
 
+def _desktop_quit_and_relaunch(edit_fn) -> str:
+    """Quit Buzz Desktop, run edit_fn() against the agent store, relaunch."""
+    import shutil as _shutil
+    import time
+
+    subprocess.run(["osascript", "-e", 'quit app "Buzz"'], capture_output=True, check=False)
+    for _ in range(30):
+        if subprocess.run(["pgrep", "-q", "buzz-desktop"], check=False).returncode != 0:
+            break
+        time.sleep(1)
+    backup = str(MANAGED_AGENTS) + ".bak-buzzctl"
+    _shutil.copy2(MANAGED_AGENTS, backup)
+    result = edit_fn()
+    subprocess.run(["open", "-a", "Buzz"], capture_output=True, check=False)
+    return f"{result} (backup: {backup})"
+
+
+def cmd_fleet_status(args: argparse.Namespace) -> int:
+    if not MANAGED_AGENTS.is_file():
+        print("no managed agents store found", file=sys.stderr)
+        return 1
+    recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
+    # Agents can have several records (definition + runtime + stale stubs);
+    # trust the most recently updated one per display name.
+    newest: dict[str, dict] = {}
+    for r in recs:
+        if isinstance(r, dict) and r.get("display_name"):
+            first = r["display_name"].split()[0]
+            if first not in newest or str(r.get("updated_at") or "") > str(newest[first].get("updated_at") or ""):
+                newest[first] = r
+    seen: dict[str, dict] = {}
+    for first, r in newest.items():
+        env = r.get("env_vars") or {}
+        seen[first] = {
+            "runtime": r.get("runtime"),
+            "model": r.get("model"),
+            "respond_to": r.get("respond_to"),
+            "subscribe": env.get("BUZZ_ACP_SUBSCRIBE"),
+            "kinds": env.get("BUZZ_ACP_KINDS"),
+        }
+    if args.json:
+        print(json.dumps(seen, indent=2))
+    else:
+        print(f"{'agent':12} {'runtime':8} {'model':22} {'respond':11} {'sub':4} kinds")
+        for n, c in sorted(seen.items()):
+            print(f"{n:12} {c.get('runtime') or '-':8} {c.get('model') or '-':22} "
+                  f"{c.get('respond_to') or '-':11} {c.get('subscribe') or '-':4} {c.get('kinds') or '-'}")
+    return 0
+
+
+def cmd_fleet_set(args: argparse.Namespace) -> int:
+    targets = None if args.all else {s.strip().lower() for s in (args.agents or "").split(",") if s.strip()}
+    if targets is not None and not targets:
+        print("pass --agents a,b or --all", file=sys.stderr)
+        return 1
+    env_pairs = dict(p.split("=", 1) for p in (args.env or []))
+    if not any([args.model, args.runtime, args.respond, env_pairs, args.avatar]):
+        print("nothing to set (use --model/--runtime/--respond/--env/--avatar)", file=sys.stderr)
+        return 1
+    avatar_uri = None
+    if args.avatar:
+        import base64
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            subprocess.run(["sips", "-Z", "384", args.avatar, "--out", tmp.name],
+                           capture_output=True, check=True)
+            avatar_uri = "data:image/png;base64," + base64.b64encode(Path(tmp.name).read_bytes()).decode()
+
+    def edit() -> str:
+        recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
+        touched = set()
+        for r in recs:
+            if not isinstance(r, dict) or not r.get("display_name"):
+                continue
+            first = r["display_name"].split()[0].lower()
+            if targets is not None and first not in targets:
+                continue
+            if args.model:
+                r["model"] = args.model
+            if args.runtime:
+                r["runtime"] = args.runtime
+            if args.respond:
+                # Both fields, or the desktop reverts the live one on restart.
+                r["respond_to"] = args.respond
+                r["definition_respond_to"] = args.respond
+            if env_pairs:
+                r.setdefault("env_vars", {}).update(env_pairs)
+            if avatar_uri:
+                r["avatar_url"] = avatar_uri
+            touched.add(first)
+        MANAGED_AGENTS.write_text(json.dumps(recs, indent=2), encoding="utf-8")
+        return f"updated {sorted(touched)}"
+
+    print(_desktop_quit_and_relaunch(edit))
+    return 0
+
+
+def cmd_mem_export(args: argparse.Namespace) -> int:
+    env = load_env(args_env_file(args))
+    out = Path(args.out).expanduser()
+    out.mkdir(parents=True, exist_ok=True)
+    code, raw, err = run_buzz(["mem", "ls"], env)
+    if code != 0:
+        print(err or raw, file=sys.stderr)
+        return 2
+    slugs = [line.split()[0] for line in raw.splitlines() if line.strip()]
+    for slug in slugs:
+        c, val, e = run_buzz(["mem", "get", slug], env)
+        if c == 0:
+            (out / f"{slug}.mem").write_text(val, encoding="utf-8")
+            print(f"exported {slug} ({len(val)} bytes)")
+        else:
+            print(f"skip {slug}: {e[:80]}", file=sys.stderr)
+    print(f"{len(slugs)} engram(s) -> {out}")
+    return 0
+
+
+def cmd_mem_import(args: argparse.Namespace) -> int:
+    env = load_env(args_env_file(args))
+    src = Path(args.dir).expanduser()
+    files = sorted(src.glob("*.mem"))
+    if not files:
+        print(f"no .mem files in {src}", file=sys.stderr)
+        return 1
+    for f in files:
+        slug = f.stem
+        c, o, e = run_buzz(["mem", "set", slug, "-"], env, stdin=f.read_text(encoding="utf-8"))
+        print(f"{'OK ' if c == 0 else 'NO '} {slug}" + ("" if c == 0 else f" {e[:80]}"))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="buzzctl", description="Agent-native Buzz CLI (CLI-Anything style)")
     p.add_argument("--env-file", default=None, help=f"Credentials env file (default: {DEFAULT_ENV_FILE})")
@@ -187,6 +318,28 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--dry-run", action="store_true")
     t.add_argument("--json", action="store_true")
     t.set_defaults(func=cmd_draft_team)
+
+    fs = sub.add_parser("fleet", help="Manage the whole agent fleet's settings")
+    fsub = fs.add_subparsers(dest="fleet_cmd", required=True)
+    st = fsub.add_parser("status", help="Table of every agent: runtime, model, respond-to, env")
+    st.add_argument("--json", action="store_true")
+    st.set_defaults(func=cmd_fleet_status)
+    se = fsub.add_parser("set", help="Bulk-set settings (quits and relaunches Buzz Desktop, with backup)")
+    se.add_argument("--agents", default=None, help="Comma-separated agent names (first word, case-insensitive)")
+    se.add_argument("--all", action="store_true", help="Apply to every agent")
+    se.add_argument("--model", default=None)
+    se.add_argument("--runtime", default=None, help="claude | codex | grok | hermes | goose")
+    se.add_argument("--respond", default=None, choices=["anyone", "owner-only", "allowlist"])
+    se.add_argument("--env", action="append", default=None, metavar="KEY=VALUE")
+    se.add_argument("--avatar", default=None, help="Image file; resized to 384px and embedded")
+    se.set_defaults(func=cmd_fleet_set)
+
+    me = sub.add_parser("mem-export", help="Export the acting agent's engrams to files")
+    me.add_argument("--out", required=True, help="Directory for <slug>.mem files")
+    me.set_defaults(func=cmd_mem_export)
+    mi = sub.add_parser("mem-import", help="Import <slug>.mem files as the acting agent's engrams")
+    mi.add_argument("--dir", required=True)
+    mi.set_defaults(func=cmd_mem_import)
     return p
 
 
