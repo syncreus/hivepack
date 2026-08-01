@@ -61,6 +61,74 @@ def test_fleet_set_model_stays_on_definition(tmp_path, monkeypatch):
     assert next(r for r in recs if r.get("pubkey") == "aa11")["model"] == "opus"
 
 
+def test_fleet_set_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
+    store = _with_store(tmp_path, monkeypatch)
+    before = store.read_text(encoding="utf-8")
+
+    def boom(fn):
+        raise AssertionError("dry run must not bounce the desktop")
+
+    monkeypatch.setattr(buzzctl, "_desktop_quit_and_relaunch", boom)
+    rc = buzzctl.main(["fleet", "set", "--all", "--respond", "anyone", "--dry-run"])
+    assert rc == 0
+    assert store.read_text(encoding="utf-8") == before
+    out = capsys.readouterr().out
+    assert "[DRY]" in out and "respond_to: owner-only -> anyone" in out
+    # One instance flip each for atlas + scout, plus atlas's definition seed.
+    assert "3 change(s)" in out
+
+
+def test_fleet_set_noop_skips_desktop_bounce(tmp_path, monkeypatch, capsys):
+    _with_store(tmp_path, monkeypatch)
+
+    def boom(fn):
+        raise AssertionError("no-op set must not bounce the desktop")
+
+    monkeypatch.setattr(buzzctl, "_desktop_quit_and_relaunch", boom)
+    rc = buzzctl.main(["fleet", "set", "--all", "--respond", "owner-only"])
+    assert rc == 0
+    assert "nothing to do" in capsys.readouterr().out
+
+
+def test_fleet_doctor_flags_drift_and_not_running(tmp_path, monkeypatch, capsys):
+    _with_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(buzzctl, "_live_agent_envs", lambda: {
+        "Atlas": {"BUZZ_ACP_RESPOND_TO": "anyone", "BUZZ_ACP_MODEL": "opus",
+                  "BUZZ_ACP_SUBSCRIBE": "all"},
+        "Ghost": {"BUZZ_ACP_RESPOND_TO": "anyone"},
+    })
+    rc = buzzctl.main(["fleet", "doctor", "--json"])
+    out = json.loads(capsys.readouterr().out)
+    agents = {r["agent"]: r for r in out["agents"]}
+    assert rc == 2 and out["ok"] is False
+    # Store says owner-only, live process spawned with anyone -> drift.
+    assert agents["Atlas"]["state"] == "drift"
+    assert agents["Atlas"]["drift"] == {
+        "respond_to": {"store": "owner-only", "live": "anyone"}}
+    assert agents["Scout"]["state"] == "not-running"
+    assert agents["Ghost"]["state"] == "unmanaged"
+
+
+def test_fleet_doctor_passes_when_live_matches(tmp_path, monkeypatch, capsys):
+    _with_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(buzzctl, "_live_agent_envs", lambda: {
+        "Atlas": {"BUZZ_ACP_RESPOND_TO": "owner-only", "BUZZ_ACP_MODEL": "opus",
+                  "BUZZ_ACP_SUBSCRIBE": "all"},
+        "Scout": {"BUZZ_ACP_RESPOND_TO": "owner-only"},
+    })
+    rc = buzzctl.main(["fleet", "doctor"])
+    assert rc == 0
+    assert "RESULT: PASS" in capsys.readouterr().out
+
+
+def test_fleet_doctor_fails_with_no_live_processes(tmp_path, monkeypatch, capsys):
+    _with_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(buzzctl, "_live_agent_envs", lambda: {})
+    rc = buzzctl.main(["fleet", "doctor"])
+    assert rc == 2
+    assert "no live buzz-acp" in capsys.readouterr().out
+
+
 def test_fleet_status_reads_instance_truth(tmp_path, monkeypatch, capsys):
     _with_store(tmp_path, monkeypatch)
     recs = json.loads(buzzctl.MANAGED_AGENTS.read_text(encoding="utf-8"))

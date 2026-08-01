@@ -52,10 +52,14 @@ respond / env / avatar with automatic desktop quit, backup, relaunch),
 `mem-export` / `mem-import` (engram round-trip via `buzz mem`, solving the
 "my agent's memories are trapped on this machine" problem).
 
-**Hardening list.** Unit tests against a fixture store; `fleet set --dry-run`;
-`fleet doctor` cross-check of store values vs live process env (catches the
-respond-to drift automatically); ghost-record cleanup subcommand (archived
-builtins leave stubs behind).
+**Hardening list.** SHIPPED 2026-08-01: unit tests against a fixture store
+(`tests/test_buzzctl.py`); `fleet set --dry-run` (prints planned changes,
+never writes or bounces the desktop — a no-op set also skips the bounce);
+`fleet doctor` cross-check of store values vs live process env (respond_to,
+model, subscribe, kinds; flags drifted / not-running / unmanaged agents,
+exit 2 on drift; env extraction is allowlisted so BUZZ_PRIVATE_KEY never
+leaves the process line). Still open: ghost-record cleanup subcommand
+(archived builtins leave stubs behind).
 
 ---
 

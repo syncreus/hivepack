@@ -195,15 +195,15 @@ def _record_label(r: dict) -> str | None:
     return label.split()[0] if label.strip() else None
 
 
-def cmd_fleet_status(args: argparse.Namespace) -> int:
-    if not MANAGED_AGENTS.is_file():
-        print("no managed agents store found", file=sys.stderr)
-        return 1
+def _fleet_view() -> dict[str, dict]:
+    """Per-agent merged config view from the store, keyed by first-word name.
+
+    Per agent keep the newest definition record AND the newest instance
+    record. The instance (pubkey set) is what actually spawns — its
+    respond_to feeds BUZZ_ACP_RESPOND_TO — while definition-linked config
+    (env_vars, runtime defaults) lives on the definition.
+    """
     recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
-    # Per agent keep the newest definition record AND the newest instance
-    # record. The instance (pubkey set) is what actually spawns — its
-    # respond_to feeds BUZZ_ACP_RESPOND_TO — while definition-linked config
-    # (env_vars, runtime defaults) lives on the definition.
     defs: dict[str, dict] = {}
     insts: dict[str, dict] = {}
     for r in recs:
@@ -215,17 +215,25 @@ def cmd_fleet_status(args: argparse.Namespace) -> int:
         bucket = insts if r.get("pubkey") else defs
         if first not in bucket or str(r.get("updated_at") or "") > str(bucket[first].get("updated_at") or ""):
             bucket[first] = r
-    seen: dict[str, dict] = {}
+    view: dict[str, dict] = {}
     for first in set(defs) | set(insts):
         d, i = defs.get(first, {}), insts.get(first, {})
         env = {**(d.get("env_vars") or {}), **(i.get("env_vars") or {})}
-        seen[first] = {
+        view[first] = {
             "runtime": i.get("runtime") or d.get("runtime"),
             "model": i.get("model") or d.get("model"),
             "respond_to": i.get("respond_to") if i else d.get("definition_respond_to"),
             "subscribe": env.get("BUZZ_ACP_SUBSCRIBE"),
             "kinds": env.get("BUZZ_ACP_KINDS"),
         }
+    return view
+
+
+def cmd_fleet_status(args: argparse.Namespace) -> int:
+    if not MANAGED_AGENTS.is_file():
+        print("no managed agents store found", file=sys.stderr)
+        return 1
+    seen = _fleet_view()
     if args.json:
         print(json.dumps(seen, indent=2))
     else:
@@ -234,6 +242,92 @@ def cmd_fleet_status(args: argparse.Namespace) -> int:
             print(f"{n:12} {c.get('runtime') or '-':8} {c.get('model') or '-':22} "
                   f"{c.get('respond_to') or '-':11} {c.get('subscribe') or '-':4} {c.get('kinds') or '-'}")
     return 0
+
+
+# Spawn-env keys doctor may extract from a live process. The raw `ps eww`
+# line also carries BUZZ_PRIVATE_KEY — extraction is allowlisted to these
+# keys and the raw line is never returned, stored, or printed.
+_DOCTOR_ENV_KEYS = (
+    "BUZZ_ACP_SESSION_TITLE",
+    "BUZZ_ACP_RESPOND_TO",
+    "BUZZ_ACP_MODEL",
+    "BUZZ_ACP_SUBSCRIBE",
+    "BUZZ_ACP_KINDS",
+)
+
+
+def _live_agent_envs() -> dict[str, dict[str, str]]:
+    """Map agent first-word name -> allowlisted spawn env of its live buzz-acp process."""
+    import re
+
+    pids = subprocess.run(
+        ["pgrep", "buzz-acp"], capture_output=True, text=True, check=False
+    ).stdout.split()
+    live: dict[str, dict[str, str]] = {}
+    for pid in pids:
+        line = subprocess.run(
+            ["ps", "eww", "-o", "command=", "-p", pid],
+            capture_output=True, text=True, check=False,
+        ).stdout
+        env: dict[str, str] = {}
+        for key in _DOCTOR_ENV_KEYS:
+            # Value runs until the next VAR= assignment (titles contain spaces).
+            m = re.search(rf"{key}=(.*?)(?= [A-Z_][A-Z0-9_]*=|$)", line)
+            if m:
+                env[key] = m.group(1).strip()
+        title = env.pop("BUZZ_ACP_SESSION_TITLE", "")
+        if title.strip():
+            live[title.split()[0]] = env
+    return live
+
+
+def cmd_fleet_doctor(args: argparse.Namespace) -> int:
+    """Cross-check store config against live process env — catches drift
+    (e.g. an edit the desktop hasn't respawned agents for) automatically."""
+    if not MANAGED_AGENTS.is_file():
+        print("no managed agents store found", file=sys.stderr)
+        return 1
+    view = _fleet_view()
+    live = _live_agent_envs()
+    checks = {  # store field -> live env key
+        "respond_to": "BUZZ_ACP_RESPOND_TO",
+        "model": "BUZZ_ACP_MODEL",
+        "subscribe": "BUZZ_ACP_SUBSCRIBE",
+        "kinds": "BUZZ_ACP_KINDS",
+    }
+    rows = []
+    for name in sorted(set(view) | set(live)):
+        want, got = view.get(name), live.get(name)
+        if got is None:
+            rows.append({"agent": name, "state": "not-running", "drift": {}})
+            continue
+        if want is None:
+            rows.append({"agent": name, "state": "unmanaged", "drift": {}})
+            continue
+        drift = {
+            f: {"store": want[f], "live": got[k]}
+            for f, k in checks.items()
+            # Only compare when both sides carry a value: builtins have no
+            # runtime/model in the store, stopped pool slots no env.
+            if want.get(f) is not None and k in got and str(want[f]) != got[k]
+        }
+        rows.append({"agent": name, "state": "drift" if drift else "ok", "drift": drift})
+    drifted = [r for r in rows if r["state"] == "drift"]
+    ok = bool(live) and not drifted
+    if args.json:
+        print(json.dumps({"ok": ok, "agents": rows}, indent=2))
+    else:
+        for r in rows:
+            flag = {"ok": "OK ", "drift": "NO ", "not-running": "-- ", "unmanaged": "?? "}[r["state"]]
+            detail = "; ".join(
+                f"{f}: store={d['store']} live={d['live']}" for f, d in r["drift"].items()
+            )
+            print(f"[{flag}] {r['agent']:12} {r['state']}" + (f" ({detail})" if detail else ""))
+        if not live:
+            print("RESULT: FAIL — no live buzz-acp processes (desktop not running?)")
+        else:
+            print("RESULT:", "PASS" if ok else f"FAIL — {len(drifted)} agent(s) drifted; run fleet set (or restart Buzz) to re-spawn")
+    return 0 if ok else 2
 
 
 def cmd_fleet_set(args: argparse.Namespace) -> int:
@@ -254,9 +348,16 @@ def cmd_fleet_set(args: argparse.Namespace) -> int:
                            capture_output=True, check=True)
             avatar_uri = "data:image/png;base64," + base64.b64encode(Path(tmp.name).read_bytes()).decode()
 
-    def edit() -> str:
-        recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
-        touched = set()
+    def apply(recs: list) -> list[dict]:
+        """Mutate recs in place; return the real changes (old != new)."""
+        changes: list[dict] = []
+
+        def setval(r: dict, agent: str, kind: str, field: str, new) -> None:
+            old = r.get(field)
+            if old != new:
+                r[field] = new
+                changes.append({"agent": agent, "record": kind, "field": field, "old": old, "new": new})
+
         for r in recs:
             if not isinstance(r, dict):
                 continue
@@ -274,25 +375,51 @@ def cmd_fleet_set(args: argparse.Namespace) -> int:
                 # their cosmetic respond_to to owner-only on every persona
                 # save, which looked like a revert.
                 if args.respond:
-                    r["respond_to"] = args.respond
-                    touched.add(first)
+                    setval(r, first, "instance", "respond_to", args.respond)
                 continue
             # DEFINITION record (no key): definition_respond_to seeds future
             # instances; model/runtime/env/avatar edits here are the proven
             # persistent path for definition-linked agents.
             if args.model:
-                r["model"] = args.model
+                setval(r, first, "definition", "model", args.model)
             if args.runtime:
-                r["runtime"] = args.runtime
+                setval(r, first, "definition", "runtime", args.runtime)
             if args.respond:
-                r["definition_respond_to"] = args.respond
-            if env_pairs:
-                r.setdefault("env_vars", {}).update(env_pairs)
+                setval(r, first, "definition", "definition_respond_to", args.respond)
+            for k, v in env_pairs.items():
+                env = r.setdefault("env_vars", {})
+                if env.get(k) != v:
+                    changes.append({"agent": first, "record": "definition", "field": f"env_vars.{k}", "old": env.get(k), "new": v})
+                    env[k] = v
             if avatar_uri:
-                r["avatar_url"] = avatar_uri
-            touched.add(first)
+                setval(r, first, "definition", "avatar_url", avatar_uri)
+        return changes
+
+    def show(c: dict) -> str:
+        def clip(v) -> str:
+            s = str(v)
+            return s[:40] + "…" if len(s) > 40 else s
+
+        return f"{c['agent']:12} {c['record']}.{c['field']}: {clip(c['old'])} -> {clip(c['new'])}"
+
+    # Pre-check against the current store: a no-op set (or a dry run) must
+    # not bounce the desktop.
+    planned = apply(json.loads(MANAGED_AGENTS.read_text(encoding="utf-8")))
+    if args.dry_run or not planned:
+        for c in planned:
+            print(f"[DRY] {show(c)}")
+        print(f"{len(planned)} change(s)" + ("" if planned else " — nothing to do") + ("" if args.dry_run else "; store already up to date, desktop untouched"))
+        return 0
+
+    def edit() -> str:
+        # Re-read and re-apply after the desktop quits: it may rewrite the
+        # store on shutdown, so the pre-check copy above is stale by now.
+        recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
+        changes = apply(recs)
         MANAGED_AGENTS.write_text(json.dumps(recs, indent=2), encoding="utf-8")
-        return f"updated {sorted(touched)}"
+        for c in changes:
+            print(show(c))
+        return f"updated {sorted({c['agent'] for c in changes})}"
 
     print(_desktop_quit_and_relaunch(edit))
     return 0
@@ -358,6 +485,9 @@ def build_parser() -> argparse.ArgumentParser:
     st = fsub.add_parser("status", help="Table of every agent: runtime, model, respond-to, env")
     st.add_argument("--json", action="store_true")
     st.set_defaults(func=cmd_fleet_status)
+    fd = fsub.add_parser("doctor", help="Cross-check store config vs live process env (drift detector)")
+    fd.add_argument("--json", action="store_true")
+    fd.set_defaults(func=cmd_fleet_doctor)
     se = fsub.add_parser("set", help="Bulk-set settings (quits and relaunches Buzz Desktop, with backup)")
     se.add_argument("--agents", default=None, help="Comma-separated agent names (first word, case-insensitive)")
     se.add_argument("--all", action="store_true", help="Apply to every agent")
@@ -366,6 +496,7 @@ def build_parser() -> argparse.ArgumentParser:
     se.add_argument("--respond", default=None, choices=["anyone", "owner-only", "allowlist"])
     se.add_argument("--env", action="append", default=None, metavar="KEY=VALUE")
     se.add_argument("--avatar", default=None, help="Image file; resized to 384px and embedded")
+    se.add_argument("--dry-run", action="store_true", help="Report what would change; no write, no desktop bounce")
     se.set_defaults(func=cmd_fleet_set)
 
     me = sub.add_parser("mem-export", help="Export the acting agent's engrams to files")
