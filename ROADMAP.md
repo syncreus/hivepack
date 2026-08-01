@@ -134,18 +134,19 @@ markdown limits before building.
 
 ---
 
-## 5. Community pack: greeter, rules, onboarding (READY (generalize))
+## 5. Community pack: greeter, rules, onboarding (SHIPPED)
 
 A second built-in pack for hivepack: `community-squad`.
 - **greeter**: wakes ONLY on channel-join events (`BUZZ_ACP_KINDS=40099`),
   so chat cannot spam it. One warm welcome per member, never twice. Proven
-  pattern, already validated privately.
+  pattern, generalized from the privately validated original.
 - **rules**: answers "what's allowed here" from the channel canvas, cites
   the rule verbatim, escalates gray areas to moderators.
-- **canvas templates**: starter handbook: desks, pipeline, house rules.
+- **canvas template**: starter handbook (`canvas/handbook-template.md`):
+  start-here, desks, pipeline, house rules, moderators.
 
-**MVP cut.** Greeter + canvas template shipped as a pack; rules bot after.
-**Estimate.** One session (greeter persona is done; packaging + docs).
+Shipped with both personas plus the template in one pass; `hivepack verify`
+became pack-aware along the way (it had ship-squad's roster hardcoded).
 
 ---
 

@@ -59,9 +59,10 @@ def verify(pack_name: str = DEFAULT_PACK) -> VerifyReport:
     )
 
     # Gate 3: export snapshots + re-validate
+    expected_personas = v.persona_names
     try:
         result = add_pack(pack_dir)
-        snap_ok = len(result.snapshots) >= 3
+        snap_ok = len(expected_personas) >= 1 and len(result.snapshots) == len(expected_personas)
         # ensure memory none
         mem_ok = True
         for s in result.snapshots:
@@ -117,12 +118,12 @@ def verify(pack_name: str = DEFAULT_PACK) -> VerifyReport:
             check=False,
         )
         out2 = (proc2.stdout or "") + (proc2.stderr or "")
-        names_ok = all(n in out2 for n in ("lead", "implementer", "reviewer", "mem"))
+        names_ok = bool(expected_personas) and all(n in out2 for n in expected_personas)
         report.add(
             "buzz_pack_inspect",
             proc2.returncode == 0 and names_ok,
             out2[:400],
-            "THINK: Inspect must show all four personas resolved.",
+            f"THINK: Inspect must show all {len(expected_personas)} personas resolved.",
         )
 
     # Gate 5: unit tests

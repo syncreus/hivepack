@@ -16,4 +16,7 @@ fi
 export PATH="$HOME/.local/bin:/Applications/Buzz.app/Contents/MacOS:$PATH"
 
 echo "=== THINK: full adversarial verify ==="
-"$PY" -m hivepack verify ship-squad
+for pack in ship-squad community-squad; do
+  echo "--- pack: $pack ---"
+  "$PY" -m hivepack verify "$pack"
+done
