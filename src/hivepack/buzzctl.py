@@ -187,7 +187,7 @@ def _desktop_quit_and_relaunch(edit_fn) -> str:
 
 
 def _normalize_label(label: str) -> str | None:
-    """Agent name minus decorative emoji tokens ("Beacon SEO 🔦" -> "Beacon SEO").
+    """Agent name minus decorative emoji tokens ("Acme SEO 🔦" -> "Acme SEO").
 
     Grouping MUST use the full name: distinct agents can share a first word
     ("Acme Design" / "Acme SEO"), and first-word grouping cross-compared
@@ -456,8 +456,8 @@ def cmd_fleet_set(args: argparse.Namespace) -> int:
             if not label:
                 continue
             first = label.lower()
-            # A target matches the full name ("beacon seo") or, for
-            # convenience, the first word ("atlas"; "beacon" hits both Beacons).
+            # A target matches the full name ("acme seo") or, for
+            # convenience, the first word ("atlas"; "acme" hits both Acmes).
             if targets is not None and first not in targets and first.split()[0] not in targets:
                 continue
             if r.get("pubkey"):
