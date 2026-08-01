@@ -59,7 +59,7 @@ def existing_agent_names() -> set[str]:
     except json.JSONDecodeError:
         return set()
     # Full display names, lowercased. First-word matching is too coarse
-    # ("Beacon Design" would shadow "Beacon SEO").
+    # ("Acme Design" would shadow "Acme SEO").
     return {
         str(r["display_name"]).strip().lower()
         for r in recs
@@ -190,7 +190,7 @@ def _normalize_label(label: str) -> str | None:
     """Agent name minus decorative emoji tokens ("Beacon SEO 🔦" -> "Beacon SEO").
 
     Grouping MUST use the full name: distinct agents can share a first word
-    ("Beacon Design" / "Beacon SEO"), and first-word grouping cross-compared
+    ("Acme Design" / "Acme SEO"), and first-word grouping cross-compared
     one agent's store against the other's live process — a false drift page.
     """
     words = [w for w in label.split() if any(c.isascii() and c.isalnum() for c in w)]
