@@ -83,14 +83,17 @@ CI-style dashboards) has to speak raw relay filters. Proposed issue:
 either a `--with-status` flag on `list`/`get`, or a `status get` twin to
 `status`.
 
-## Submission checklist (when approved)
+## Submitted (2026-08-01, on Daniel's go)
 
-Fork exists and the branch is pushed: the docs commit sits at
-https://github.com/syncreus/buzz/tree/hivepack/ws6-upstream (fork of
-block/buzz, no PR opened). Remaining steps, one morning "yes" away:
+All four are live upstream, rebased on current main before submission:
 
-1. `gh pr create --repo block/buzz --head syncreus:hivepack/ws6-upstream`
-   with the docs PR body above.
-2. File the four issues (draft-create review-form panel, key rotation,
-   snapshot v2 skills, NIP-34 status read surface); attach
-   `draft-create-config.reference.diff` to the first.
+- Docs PR: https://github.com/block/buzz/pull/4108
+- draft-create visible-config issue (reference diff embedded):
+  https://github.com/block/buzz/issues/4109
+- Key rotation: https://github.com/block/buzz/issues/4110
+- Snapshot v2 skills: https://github.com/block/buzz/issues/4111
+- NIP-34 status read surface: https://github.com/block/buzz/issues/4112
+
+Branch: syncreus/buzz `hivepack/ws6-upstream` (07c4506). Watch for
+maintainer review; the draft-create issue offers to turn the reference
+diff into a PR if the direction is accepted.
