@@ -1,0 +1,185 @@
+diff --git a/crates/buzz-cli/src/agent_management.rs b/crates/buzz-cli/src/agent_management.rs
+index ce4059f..db22ad6 100644
+--- a/crates/buzz-cli/src/agent_management.rs
++++ b/crates/buzz-cli/src/agent_management.rs
+@@ -16,6 +16,14 @@ pub struct CreateAgentDraft {
+     pub channel_id: String,
+     pub display_name: String,
+     pub system_prompt: String,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub runtime: Option<String>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub provider: Option<String>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub model: Option<String>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub respond_to: Option<String>,
+ }
+ 
+ #[derive(Debug, Clone, Serialize)]
+@@ -84,6 +92,19 @@ fn optional(value: Option<String>, label: &str) -> Result<Option<String>, CliErr
+     value.map(|value| required(value, label, 300)).transpose()
+ }
+ 
++fn validated_respond_to(value: Option<String>) -> Result<Option<String>, CliError> {
++    let respond_to = optional(value, "respond-to")?;
++    if respond_to
++        .as_deref()
++        .is_some_and(|value| value != "owner-only" && value != "anyone")
++    {
++        return Err(CliError::Usage(
++            "respond-to must be owner-only or anyone".into(),
++        ));
++    }
++    Ok(respond_to)
++}
++
+ fn build<T: Serialize>(
+     keys: &Keys,
+     owner: &PublicKey,
+@@ -137,6 +158,10 @@ pub fn build_create(
+         channel_id: channel_id.clone(),
+         display_name: required(draft.display_name, "display name", MAX_NAME_CHARS)?,
+         system_prompt: required(draft.system_prompt, "system prompt", MAX_PROMPT_CHARS)?,
++        runtime: optional(draft.runtime, "runtime")?,
++        provider: optional(draft.provider, "provider")?,
++        model: optional(draft.model, "model")?,
++        respond_to: validated_respond_to(draft.respond_to)?,
+     };
+     build(keys, owner, channel_id, "create", request)
+ }
+@@ -149,15 +174,7 @@ pub fn build_update(
+     let channel_id = required(draft.channel_id, "channel", 128)?;
+     uuid::Uuid::parse_str(&channel_id)
+         .map_err(|_| CliError::Usage(format!("invalid channel UUID: {channel_id}")))?;
+-    let respond_to = optional(draft.respond_to, "respond-to")?;
+-    if respond_to
+-        .as_deref()
+-        .is_some_and(|value| value != "owner-only" && value != "anyone")
+-    {
+-        return Err(CliError::Usage(
+-            "respond-to must be owner-only or anyone".into(),
+-        ));
+-    }
++    let respond_to = validated_respond_to(draft.respond_to)?;
+     let request = UpdateAgentDraft {
+         channel_id: channel_id.clone(),
+         agent_name: required(draft.agent_name, "agent name", MAX_NAME_CHARS)?,
+@@ -203,6 +220,10 @@ mod tests {
+                 channel_id: CHANNEL.into(),
+                 display_name: "Research helper".into(),
+                 system_prompt: "Find sources.".into(),
++                runtime: None,
++                provider: None,
++                model: None,
++                respond_to: None,
+             },
+         )
+         .unwrap();
+@@ -240,6 +261,50 @@ mod tests {
+         assert!(payload["payload"]["request"].get("respondTo").is_none());
+     }
+ 
++    #[test]
++    fn create_carries_optional_config_in_camel_case() {
++        let owner = Keys::generate();
++        let built = build_create(
++            &Keys::generate(),
++            &owner.public_key(),
++            CreateAgentDraft {
++                channel_id: CHANNEL.into(),
++                display_name: "Research helper".into(),
++                system_prompt: "Find sources.".into(),
++                runtime: Some("claude".into()),
++                provider: Some("anthropic".into()),
++                model: Some("opus".into()),
++                respond_to: Some("anyone".into()),
++            },
++        )
++        .unwrap();
++        let payload: serde_json::Value = decrypt_observer_payload(&owner, &built.event).unwrap();
++        let request = &payload["payload"]["request"];
++        assert_eq!(request["runtime"], "claude");
++        assert_eq!(request["provider"], "anthropic");
++        assert_eq!(request["model"], "opus");
++        assert_eq!(request["respondTo"], "anyone");
++    }
++
++    #[test]
++    fn create_rejects_unknown_respond_to() {
++        let error = build_create(
++            &Keys::generate(),
++            &Keys::generate().public_key(),
++            CreateAgentDraft {
++                channel_id: CHANNEL.into(),
++                display_name: "Scout".into(),
++                system_prompt: "Help".into(),
++                runtime: None,
++                provider: None,
++                model: None,
++                respond_to: Some("everyone".into()),
++            },
++        )
++        .unwrap_err();
++        assert!(error.to_string().contains("respond-to must be"));
++    }
++
+     #[test]
+     fn update_requires_a_change() {
+         let error = build_update(
+@@ -269,6 +334,10 @@ mod tests {
+                 channel_id: "general".into(),
+                 display_name: "Scout".into(),
+                 system_prompt: "Help".into(),
++                runtime: None,
++                provider: None,
++                model: None,
++                respond_to: None,
+             },
+         )
+         .unwrap_err();
+diff --git a/crates/buzz-cli/src/commands/agents.rs b/crates/buzz-cli/src/commands/agents.rs
+index 58564a4..da5082d 100644
+--- a/crates/buzz-cli/src/commands/agents.rs
++++ b/crates/buzz-cli/src/commands/agents.rs
+@@ -15,6 +15,10 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
+             channel,
+             display_name,
+             system_prompt,
++            runtime,
++            provider,
++            model,
++            respond_to,
+         } => {
+             let owner = require_owner(client)?;
+             let built = build_create(
+@@ -24,6 +28,10 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
+                     channel_id: channel,
+                     display_name,
+                     system_prompt: read_or_stdin(&system_prompt)?,
++                    runtime,
++                    provider,
++                    model,
++                    respond_to: respond_to.map(RespondToArg::to_wire),
+                 },
+             )?;
+             let response = client.publish_ephemeral_event(built.event).await?;
+diff --git a/crates/buzz-cli/src/lib.rs b/crates/buzz-cli/src/lib.rs
+index 0b46734..e028d5d 100644
+--- a/crates/buzz-cli/src/lib.rs
++++ b/crates/buzz-cli/src/lib.rs
+@@ -269,6 +269,14 @@ pub enum AgentsCmd {
+         /// Proposed instructions; use '-' to read from stdin
+         #[arg(long)]
+         system_prompt: String,
++        #[arg(long)]
++        runtime: Option<String>,
++        #[arg(long)]
++        provider: Option<String>,
++        #[arg(long)]
++        model: Option<String>,
++        #[arg(long, value_enum)]
++        respond_to: Option<RespondToArg>,
+     },
+     /// Open a prefilled edit-agent form in the owner's Buzz Desktop
+     DraftUpdate {

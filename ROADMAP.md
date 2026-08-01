@@ -154,18 +154,31 @@ PR; per-agent stopgate.toml distribution in packs.
 
 ---
 
-## 4. Branch Theater: visible agent work (SPEC)
+## 4. Branch Theater: visible agent work (SHIPPED (MVP))
 
 **Problem.** "I lose fidelity of what agents are doing": agent work is
 buried in prose. Diffs, tool calls, and CI status deserve rich rendering.
 
-**Shape.** A renderer bot subscribed to NIP-34 git events (patches, PRs,
-issues via `buzz patches/pr/issues`) that posts threaded cards: diffstat,
-files touched, CI badge, review status, links. v2: tool-trace summaries from
-harness transcripts. Needs a design pass on card format inside Buzz's
-markdown limits before building.
+**Shipped (2026-08-01).** `branchtheater` console script
+(`src/hivepack/branchtheater.py`): polls the NIP-34 surface of watched
+repos (`--repo OWNER_HEX:REPO_ID`, repeatable) and posts one markdown card
+per new patch (kind:1617), PR (1618), and issue (1621) to a channel.
+Patch cards carry subject, author, diffstat, and files touched (parsed
+from the format-patch content); issue/PR titles come from the NIP-34
+`subject` tag. State file records seen event ids AND each card's message
+event id, so v2 can thread updates under the original card via
+`messages send --reply-to`. Verified E2E in hive-test against a live
+announced repo (`hivepack-demo`).
 
-**Estimate.** Spec session + two build sessions.
+**Card format (design pass result).** Buzz messages render markdown but
+cards must survive narrow sidebars: no tables, max 4 lines —
+`🎭 **Patch** · repo — title` / `N file(s) · +A −B · by author` /
+backticked file list (first 8) / `event <id8>`.
+
+**v2.** Status-change lines threaded under cards — blocked upstream: the
+buzz CLI can SET patch/PR/issue statuses (kind:1630-1633) but has no read
+surface for them (noted in docs/upstream-buzz.md). CI badges (needs a CI
+event source), tool-trace summaries from harness transcripts.
 
 ---
 
@@ -185,17 +198,25 @@ became pack-aware along the way (it had ship-squad's roster hardcoded).
 
 ---
 
-## 6. Upstream PRs to block/buzz (SPEC, high goodwill)
+## 6. Upstream PRs to block/buzz (PREPPED — submission gated on owner go)
 
-1. `agents draft-create`: accept `--runtime`, `--model`, `--env`,
-   `--respond-to` so programmatic creation carries full config (today only
-   name + prompt survive the draft).
-2. Agent key rotation: regenerate an agent's keypair in place; today the key
-   is shown once and rotation means delete-and-recreate.
-3. Snapshot v2: zip format carrying skills (spec'd as deferred in
-   agent_snapshot.rs): hivepack convert is the natural test case.
-4. Docs: `respond_to` vs `definition_respond_to` semantics and which store
-   is canonical (findings from workstream 0).
+Drafts live in `docs/upstream-buzz.md`; the docs commit sits on branch
+`hivepack/ws6-upstream` in the local buzz clone. Nothing submitted yet.
+
+1. `agents draft-create` config flags: **deliberately restricted upstream**
+   (explicit test: "chat creation cannot choose runtime, provider, model,
+   or access" — an agent must not propose itself elevated config into a
+   collapsed review form). Reshaped as an issue proposing a visible
+   "proposed settings" panel; transport-side reference diff prepared
+   (`docs/draft-create-config.reference.diff`). Local answer remains
+   `buzzctl fleet set` post-create.
+2. Agent key rotation: issue drafted (design questions on identity
+   continuity + engram migration make this an issue, not a PR).
+3. Snapshot v2 carrying skills: issue drafted; hivepack convert offered as
+   the round-trip test case.
+4. Docs — respond_to vs definition_respond_to and which store is canonical:
+   **PR ready** (NIP-AP status paragraph was stale; live desktop already
+   emits behavioral fields). Findings from workstream 0.
 
 ---
 

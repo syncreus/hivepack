@@ -6,13 +6,13 @@ from hivepack import buzzctl
 
 FIXTURE = [
     # Key-less definition record (display_name set, no pubkey).
-    {"display_name": "Atlas 🏗️", "pubkey": "", "respond_to": "owner-only",
+    {"display_name": "Atlas 🏗️", "pubkey": "", "slug": "def-atlas", "respond_to": "owner-only",
      "definition_respond_to": "owner-only", "env_vars": {"BUZZ_ACP_SUBSCRIBE": "all"},
      "runtime": "claude", "model": "opus", "updated_at": "2026-01-01T00:00:00+00:00"},
     # Instance record for the same agent (pubkey set, display_name absent).
-    {"name": "Atlas 🏗️", "pubkey": "aa11", "respond_to": "owner-only",
+    {"name": "Atlas 🏗️", "pubkey": "aa11", "persona_id": "def-atlas", "respond_to": "owner-only",
      "runtime": "claude", "model": "opus", "updated_at": "2026-01-02T00:00:00+00:00"},
-    # Unrelated instance, must stay untouched by --agents atlas.
+    # Unrelated standalone instance (no persona_id), untouched by --agents atlas.
     {"name": "Scout 🔬", "pubkey": "bb22", "respond_to": "owner-only",
      "updated_at": "2026-01-02T00:00:00+00:00"},
 ]
@@ -127,6 +127,39 @@ def test_fleet_doctor_fails_with_no_live_processes(tmp_path, monkeypatch, capsys
     rc = buzzctl.main(["fleet", "doctor"])
     assert rc == 2
     assert "no live buzz-acp" in capsys.readouterr().out
+
+
+def test_fleet_cleanup_lists_and_removes_orphans(tmp_path, monkeypatch, capsys):
+    store = _with_store(tmp_path, monkeypatch)
+    recs = json.loads(store.read_text(encoding="utf-8"))
+    # Ghost: instance whose persona_id has no surviving definition slug.
+    recs.append({"name": "Editor 🗞️", "pubkey": "cc33", "persona_id": "gone-def",
+                 "respond_to": "anyone", "updated_at": "2026-01-03T00:00:00+00:00"})
+    store.write_text(json.dumps(recs), encoding="utf-8")
+
+    rc = buzzctl.main(["fleet", "cleanup"])  # list only
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "cc33" in out and "aa11" not in out and "bb22" not in out
+    assert len(json.loads(store.read_text(encoding="utf-8"))) == 4  # unchanged
+
+    rc = buzzctl.main(["fleet", "cleanup", "--apply"])
+    assert rc == 0
+    left = json.loads(store.read_text(encoding="utf-8"))
+    assert len(left) == 3
+    assert all(r.get("pubkey") != "cc33" for r in left)
+
+
+def test_fleet_cleanup_clean_store_is_noop(tmp_path, monkeypatch, capsys):
+    _with_store(tmp_path, monkeypatch)
+
+    def boom(fn):
+        raise AssertionError("clean store must not bounce the desktop")
+
+    monkeypatch.setattr(buzzctl, "_desktop_quit_and_relaunch", boom)
+    rc = buzzctl.main(["fleet", "cleanup", "--apply"])
+    assert rc == 0
+    assert "no ghost records" in capsys.readouterr().out
 
 
 def test_fleet_status_reads_instance_truth(tmp_path, monkeypatch, capsys):

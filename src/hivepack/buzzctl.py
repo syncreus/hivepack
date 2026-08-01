@@ -332,6 +332,59 @@ def cmd_fleet_doctor(args: argparse.Namespace) -> int:
     return 0 if ok else 2
 
 
+def _find_ghosts(recs: list) -> list[dict]:
+    """Instance records whose persona_id no longer matches any definition.
+
+    Archiving a persona deletes its definition record but leaves the keyed
+    instance stub behind — the stub keeps spawning (or erroring) with config
+    that can never be edited again. persona_id=None instances are standalone
+    agents (their own definition) and are never ghosts. Age is NOT a signal:
+    a live store showed the ghost with a NEWER updated_at than its sibling.
+    """
+    slugs = {r.get("slug") for r in recs if isinstance(r, dict) and not r.get("pubkey")}
+    return [
+        r for r in recs
+        if isinstance(r, dict) and r.get("pubkey") and r.get("persona_id")
+        and r["persona_id"] not in slugs
+    ]
+
+
+def cmd_fleet_cleanup(args: argparse.Namespace) -> int:
+    if not MANAGED_AGENTS.is_file():
+        print("no managed agents store found", file=sys.stderr)
+        return 1
+    recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
+    ghosts = _find_ghosts(recs)
+    rows = [
+        {"agent": _record_label(g) or "?", "pubkey": g["pubkey"], "persona_id": g["persona_id"]}
+        for g in ghosts
+    ]
+    if args.json:
+        print(json.dumps({"ghosts": rows, "applied": bool(args.apply and rows)}, indent=2))
+    else:
+        for r in rows:
+            print(f"ghost {r['agent']:12} pubkey={r['pubkey'][:12]} persona_id={r['persona_id']} (definition gone)")
+    if not ghosts:
+        if not args.json:
+            print("no ghost records")
+        return 0
+    if not args.apply:
+        if not args.json:
+            print(f"{len(ghosts)} ghost(s); rerun with --apply to remove (quits+relaunches desktop, with backup)")
+        return 0
+
+    doomed = {g["pubkey"] for g in ghosts}
+
+    def edit() -> str:
+        fresh = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
+        kept = [r for r in fresh if not (isinstance(r, dict) and r.get("pubkey") in doomed)]
+        MANAGED_AGENTS.write_text(json.dumps(kept, indent=2), encoding="utf-8")
+        return f"removed {len(fresh) - len(kept)} ghost record(s)"
+
+    print(_desktop_quit_and_relaunch(edit))
+    return 0
+
+
 def cmd_fleet_set(args: argparse.Namespace) -> int:
     targets = None if args.all else {s.strip().lower() for s in (args.agents or "").split(",") if s.strip()}
     if targets is not None and not targets:
@@ -490,6 +543,10 @@ def build_parser() -> argparse.ArgumentParser:
     fd = fsub.add_parser("doctor", help="Cross-check store config vs live process env (drift detector)")
     fd.add_argument("--json", action="store_true")
     fd.set_defaults(func=cmd_fleet_doctor)
+    fc = fsub.add_parser("cleanup", help="List ghost records (orphaned instance stubs); --apply removes them")
+    fc.add_argument("--apply", action="store_true", help="Remove ghosts (quits and relaunches Buzz Desktop, with backup)")
+    fc.add_argument("--json", action="store_true")
+    fc.set_defaults(func=cmd_fleet_cleanup)
     se = fsub.add_parser("set", help="Bulk-set settings (quits and relaunches Buzz Desktop, with backup)")
     se.add_argument("--agents", default=None, help="Comma-separated agent names (first word, case-insensitive)")
     se.add_argument("--all", action="store_true", help="Apply to every agent")

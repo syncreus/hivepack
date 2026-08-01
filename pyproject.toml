@@ -24,6 +24,7 @@ buzzctl = "hivepack.buzzctl:main"
 receiptmem = "hivepack.receiptmem.listener:main"
 stopgate = "hivepack.stopgate.server:main"
 receiptmem-mcp = "hivepack.receiptmem.mcp_server:main"
+branchtheater = "hivepack.branchtheater:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
