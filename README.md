@@ -19,7 +19,7 @@ Buzz gives you the office. HivePack gives you the team: opinionated multi-agent 
 ## Install
 
 ```bash
-git clone https://github.com/hccbuddy-svg/hivepack
+git clone https://github.com/syncreus/hivepack
 cd hivepack
 python3 -m pip install -e '.[dev]'
 hivepack doctor
