@@ -85,8 +85,12 @@ either a `--with-status` flag on `list`/`get`, or a `status get` twin to
 
 ## Submission checklist (when approved)
 
-1. `gh repo fork block/buzz --clone=false` under the syncreus (or
-   personal) account; add fork remote to the buzz clone.
-2. Push `hivepack/ws6-upstream`, open the docs PR with the body above.
-3. File the three issues; attach
+Fork exists and the branch is pushed: the docs commit sits at
+https://github.com/syncreus/buzz/tree/hivepack/ws6-upstream (fork of
+block/buzz, no PR opened). Remaining steps, one morning "yes" away:
+
+1. `gh pr create --repo block/buzz --head syncreus:hivepack/ws6-upstream`
+   with the docs PR body above.
+2. File the four issues (draft-create review-form panel, key rotation,
+   snapshot v2 skills, NIP-34 status read surface); attach
    `draft-create-config.reference.diff` to the first.
