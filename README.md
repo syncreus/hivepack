@@ -104,6 +104,77 @@ Subscription is not reply permission: the agent sees the conversation for contex
 | `hivepack convert <agent>` | Claude Code agent to Buzz persona, skills bundled |
 | `buzzctl draft-team <pack>` | Push a pack into Buzz as owner-reviewed drafts |
 
+## StopGate: lifecycle gates for agents
+
+An MCP server (`stopgate`) implementing buzz-agent's [MCP-driven hook
+convention](https://github.com/block/buzz/blob/main/docs/MCP_DRIVEN_HOOKS.md).
+When the LLM tries to end its turn, buzz-agent calls the hidden `_Stop` tool;
+StopGate objects until its gates pass, so the agent keeps working instead of
+walking away.
+
+Two gates, each optional, configured per agent in `stopgate.toml`
+(path via the `STOPGATE_CONFIG` env var, default `./stopgate.toml`):
+
+```toml
+timeout_minutes = 30            # fail-open deadline; 0 = never
+
+[ci]
+enabled = true
+workdir = "/path/to/repo"       # checkout whose CI is checked (via gh)
+branch  = ""                    # default: current branch of workdir
+
+[approval]
+enabled   = true
+channel   = "<channel-uuid>"    # where the wrap-up approval request is posted
+emoji     = "👍"
+approvers = ["<pubkey>"]        # who may approve; empty = anyone (see below)
+buzz_bin  = "buzz"
+```
+
+- **ci** objects while the latest GitHub Actions run on the branch is red or
+  still running. No runs at all passes (nothing to gate).
+- **approval** posts one wrap-up request to the channel, then objects until a
+  listed approver reacts with the emoji. Set `approvers`, otherwise any
+  channel member (including a helpful fellow agent) can release the gate.
+- Gates fail **open** after `timeout_minutes`, so a dead backend or an absent
+  human never bricks an agent. Every backend call is budgeted to keep each
+  hook response inside buzz-agent's 2.5s window.
+- StopGate occupies the agent's single MCP slot (displacing `buzz-dev-mcp`),
+  so it also exposes one visible tool, `send_message`, as the agent's reply
+  path.
+
+Wiring today is a manually spawned harness (the desktop pins its MCP slot to
+`buzz-dev-mcp` for native agents):
+
+```bash
+MCP_HOOK_SERVERS='*' \
+BUZZ_ACP_AGENT_COMMAND=buzz-agent \
+BUZZ_ACP_MCP_COMMAND=/path/to/stopgate-launcher.sh \
+BUZZ_ACP_CHANNELS=<channel-uuid> \
+buzz-acp
+```
+
+The launcher script must bake `STOPGATE_CONFIG` in (buzz-agent spawns MCP
+children with a cleared env) and `exec stopgate`. Hooks fire only in the
+native `buzz-agent` runtime; Claude Code, Codex, and Goose harness sessions
+never call them.
+
+### The 60-second demo
+
+1. An agent with both gates finishes its task and posts a wrap-up.
+2. It tries to end its turn. `_Stop` fires: CI on its branch is red, so the
+   gate objects with the failing run's URL. The agent cannot stop.
+3. CI goes green. The next stop attempt passes the ci gate, and StopGate
+   posts to the channel: *"Wrap-up ready for review. React 👍 to this message
+   to let me end my turn."* — and objects again.
+4. You tap 👍 on that message. On the agent's next stop attempt the gate
+   sees the reaction and stays silent. The agent ends its turn.
+
+Honesty box: hooks are advisory. buzz-agent stops anyway after
+`BUZZ_AGENT_STOP_MAX_REJECTIONS` objections per prompt (default 3), and a
+hook that overruns its window counts as no objection. StopGate delays a stop;
+relay-side branch protections are the hard enforcement.
+
 ## Formats
 
 - Persona packs follow the spec in `block/buzz` at `crates/buzz-persona/PERSONA_PACK_SPEC.md`
