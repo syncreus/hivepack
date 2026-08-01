@@ -184,26 +184,45 @@ def _desktop_quit_and_relaunch(edit_fn) -> str:
     return f"{result} (backup: {backup})"
 
 
+def _record_label(r: dict) -> str | None:
+    """First word of the agent's name, lowercased key across record kinds.
+
+    The unified store mixes key-less DEFINITION records (display_name set,
+    empty pubkey) with INSTANCE records (pubkey set, name set, display_name
+    None). Both kinds must match so callers can address either.
+    """
+    label = r.get("display_name") or r.get("name") or ""
+    return label.split()[0] if label.strip() else None
+
+
 def cmd_fleet_status(args: argparse.Namespace) -> int:
     if not MANAGED_AGENTS.is_file():
         print("no managed agents store found", file=sys.stderr)
         return 1
     recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
-    # Agents can have several records (definition + runtime + stale stubs);
-    # trust the most recently updated one per display name.
-    newest: dict[str, dict] = {}
+    # Per agent keep the newest definition record AND the newest instance
+    # record. The instance (pubkey set) is what actually spawns — its
+    # respond_to feeds BUZZ_ACP_RESPOND_TO — while definition-linked config
+    # (env_vars, runtime defaults) lives on the definition.
+    defs: dict[str, dict] = {}
+    insts: dict[str, dict] = {}
     for r in recs:
-        if isinstance(r, dict) and r.get("display_name"):
-            first = r["display_name"].split()[0]
-            if first not in newest or str(r.get("updated_at") or "") > str(newest[first].get("updated_at") or ""):
-                newest[first] = r
+        if not isinstance(r, dict):
+            continue
+        first = _record_label(r)
+        if not first:
+            continue
+        bucket = insts if r.get("pubkey") else defs
+        if first not in bucket or str(r.get("updated_at") or "") > str(bucket[first].get("updated_at") or ""):
+            bucket[first] = r
     seen: dict[str, dict] = {}
-    for first, r in newest.items():
-        env = r.get("env_vars") or {}
+    for first in set(defs) | set(insts):
+        d, i = defs.get(first, {}), insts.get(first, {})
+        env = {**(d.get("env_vars") or {}), **(i.get("env_vars") or {})}
         seen[first] = {
-            "runtime": r.get("runtime"),
-            "model": r.get("model"),
-            "respond_to": r.get("respond_to"),
+            "runtime": i.get("runtime") or d.get("runtime"),
+            "model": i.get("model") or d.get("model"),
+            "respond_to": i.get("respond_to") if i else d.get("definition_respond_to"),
             "subscribe": env.get("BUZZ_ACP_SUBSCRIBE"),
             "kinds": env.get("BUZZ_ACP_KINDS"),
         }
@@ -239,18 +258,33 @@ def cmd_fleet_set(args: argparse.Namespace) -> int:
         recs = json.loads(MANAGED_AGENTS.read_text(encoding="utf-8"))
         touched = set()
         for r in recs:
-            if not isinstance(r, dict) or not r.get("display_name"):
+            if not isinstance(r, dict):
                 continue
-            first = r["display_name"].split()[0].lower()
+            first = _record_label(r)
+            if not first:
+                continue
+            first = first.lower()
             if targets is not None and first not in targets:
                 continue
+            if r.get("pubkey"):
+                # INSTANCE record: respond_to here is what the desktop spawns
+                # as BUZZ_ACP_RESPOND_TO, and its boot reconcile signs + syncs
+                # the edited value (kind:30177) so it survives restarts. The
+                # old code only edited definition records — the desktop reset
+                # their cosmetic respond_to to owner-only on every persona
+                # save, which looked like a revert.
+                if args.respond:
+                    r["respond_to"] = args.respond
+                    touched.add(first)
+                continue
+            # DEFINITION record (no key): definition_respond_to seeds future
+            # instances; model/runtime/env/avatar edits here are the proven
+            # persistent path for definition-linked agents.
             if args.model:
                 r["model"] = args.model
             if args.runtime:
                 r["runtime"] = args.runtime
             if args.respond:
-                # Both fields, or the desktop reverts the live one on restart.
-                r["respond_to"] = args.respond
                 r["definition_respond_to"] = args.respond
             if env_pairs:
                 r.setdefault("env_vars", {}).update(env_pairs)

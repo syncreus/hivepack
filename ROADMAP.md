@@ -6,37 +6,42 @@ SHIPPED, READY (spec complete, start building), SPEC (needs a design pass).
 
 ---
 
-## 0. Fleet hardening: durable respond-to (READY, do first)
+## 0. Fleet hardening: durable respond-to (SHIPPED)
 
-**Problem.** `buzzctl fleet set --respond anyone` writes both `respond_to`
-and `definition_respond_to` in the managed-agents store, and the value holds
-across one or two desktop restarts, then reverts to `owner-only` when the
-desktop rewrites an agent's records. The only write observed to survive
-long-term is one made through the desktop's own edit form.
+**Root cause (found by reading block/buzz `managed_agents/` source, not by
+store diffing).** The managed-agents store mixes two record kinds: key-less
+DEFINITION records (`display_name` set, empty `pubkey`) and INSTANCE records
+(`pubkey` set, `name` set, `display_name` null). `BUZZ_ACP_RESPOND_TO` is
+spawned from the INSTANCE record's `respond_to`. The old `fleet set` matched
+on `display_name`, so it only ever edited definition records — whose
+`respond_to` field is cosmetic and reset to `owner-only` by every persona
+save (`AgentDefinition::into_agent_record` fills it with
+`RespondTo::default()`). That reset is the "revert" fleet status showed; the
+instances were never edited at all.
 
-**Evidence trail.**
-- File edits to `runtime`, `model`, `env_vars`, and `avatar_url` all persist
-  indefinitely. Only the respond fields revert.
-- The newest-written agent keeps `anyone` until its records are next
-  rewritten; older agents drift back one by one.
-- Live ground truth is the spawned process env: `BUZZ_ACP_RESPOND_TO` in the
-  buzz-acp process. Check it with `ps eww` rather than trusting the store.
-- Note when testing: agents owned by the same operator appear to pass the
-  `owner-only` gate (owner attestation, NIP-OA), so a true test requires a
-  message from an identity with a DIFFERENT owner.
+**Suspects cleared.** `teams.json` holds only the builtin Welcome Team.
+`retention.db` (per-scope, `agents/retention/<scope>.db`) is real but needs
+no direct writes: the desktop's boot reconcile
+(`reconcile_agents_to_events`, present in the installed build) projects
+edited instance records into signed kind:30177 events with a monotonic
+`created_at` bump and `pending_sync=1`, and the flush loop publishes them to
+the relay. Editing the instance records while the desktop is quit IS the
+durable path.
 
-**Prime suspect.** `teams.json` next to `managed-agents.json`: likely the
-canonical definition store the desktop projects from on rewrite. Second
-suspect: per-definition state inside the desktop's sqlite (`retention.db`).
+**Fix.** `fleet set` now matches records by `display_name` OR `name`;
+`--respond` writes `respond_to` on instance records (the value that spawns)
+and `definition_respond_to` on definition records (seeds future instances).
+`fleet status` reads instance truth merged with definition env. Unit tests
+against a fixture store in `tests/test_buzzctl.py`.
 
-**Build.**
-1. Diff `teams.json` before/after flipping respond-to in the desktop UI once.
-2. If teams.json is canonical: extend `fleet set` to edit it (same
-   quit/backup/relaunch discipline). If sqlite: same via `sqlite3`.
-3. Acceptance gate: `fleet set --respond anyone --all` survives THREE desktop
-   restart cycles and a message from a foreign-owner identity gets a reply.
+**Verified.** `fleet set --respond anyone --all` → all 21 instance records,
+all 21 retained kind:30177 events (synced, `pending_sync=0`), and every live
+`buzz-acp` process env (`ps eww`) show `anyone` across three desktop
+quit/relaunch cycles.
 
-**Estimate.** One focused session.
+**Still open (moved to workstream 6).** Foreign-owner reply test needs a
+second identity; `agents draft-create --respond-to` upstream would remove
+the need for post-create flips.
 
 ---
 
